@@ -55,7 +55,7 @@ function tile(o) {
   const [cp, cwhy] = cfOf(o, stale, f);
   const c = stale ? C.gray : COL[o.st];
   const pill = stale ? `⚠ ${esc(f.status)}` : LAB[o.st];
-  return `<div class="tile${o.hero ? ' hero' : ''}${stale ? ' stale' : ''}" style="border-top-color:${c}">
+  return `<div class="tile${o.hero ? ' hero' : ''}${o.cls ? ' ' + o.cls : ''}${stale ? ' stale' : ''}" style="border-top-color:${c}">
  <div class="trow"><div class="ttitle">${esc(o.title)}</div><span class="st" style="background:${c}">${pill}</span></div>
  <div class="vrow"><div class="val">${o.val}</div>${o.spark ? spark(o.spark, c, o.goal) : ''}</div>
  <div class="sub">${o.sub}</div>
@@ -213,6 +213,10 @@ function looks() {
   pdue.forEach(r => add(daysOld(r.due_on) > 0 ? 'r' : 'y', `${r.title}: due ${new Date(r.due_on + 'T12:00:00').toLocaleDateString('en-US', {weekday:'short', month:'numeric', day:'numeric'})}`, r.next_step || '', r.owner_bot, 'act'));
   if (d.tw30.close_rate && d.tw30.close_rate < (kpi(10) || 35) / 100) add('y', `Estimate close rate ${pct(d.tw30.close_rate)} (30 days)`, `Goal ${kpi(10) || 35}%. 90-day rate ${pct(d.tw90.close_rate || 0)}. ${S.est_age[1].n} open estimates are 8–30 days old (${usd(S.est_age[1].amt)}).`, 'Ops / Dispatch · ST 325', 'est');
   if (S.est_nosales.length) add('y', `${S.est_nosales.length} big open estimates have no salesperson`, `Biggest ${usd(S.est_nosales[0].subtotal)}. Assign a Sold By.`, 'Ops / Dispatch', 'est');
+  if (S.lk_fu_sum && S.lk_fu_sum.n > 0) add(S.lk_fu_sum.n > 20 ? 'r' : 'y', `${S.lk_fu_sum.n} estimates (${usd(S.lk_fu_sum.amt)}) have no follow-up after 48 h`, `Open estimates from the last 30 days with zero follow-ups logged in ServiceTitan. Biggest: ${(S.lk_fu || []).slice(0, 3).map(r => r.customer_name + ' ' + usd(r.max_subtotal)).join(', ')}.`, 'ST 85159837 · FACT', 'est');
+  if (S.lk_hot_sum && S.lk_hot_sum.open > 0) add('y', `${S.lk_hot_sum.open} customers talked about buying with no estimate yet`, `Heard in recordings over the last 30 days; ServiceTitan shows no estimate since. Top: ${(S.lk_hot || []).slice(0, 3).map(r => r.customer_name).join(', ')}. Machine-matched (ESTIMATE).`, 'Recordings + ST estimates', 'est');
+  if (S.lk_calls_sum && S.lk_calls_sum.open7_existing > 0) add('y', `${S.lk_calls_sum.open7_existing} existing customers called, missed, no callback`, `Last 7 days, no callback or booking within ${S.lk_calls_sum.hours || 4} h. ${S.lk_calls_sum.open7} missed callers in all.`, 'ST calls · ESTIMATE', 'est');
+  if (S.lk_rs) { const e = S.lk_rs.find(r => r.window_days === 30 && r.scope === 'bu_group' && r.name === 'Electrical'), c = S.lk_rs.find(r => r.window_days === 30 && r.scope === 'company'); if (e && c && e.appts >= 10 && (e.reschedules + e.cancels) / e.appts > 1.2 * (c.reschedules + c.cancels) / c.appts) add('y', `Electrical reschedules + cancels ${pct((e.reschedules + e.cancels) / e.appts)} vs company ${pct((c.reschedules + c.cancels) / c.appts)}`, 'Last 30 days. See the electrical list on Estimates & sales.', 'ST job history · ESTIMATE', 'est'); }
   if (d.lcall && d.lcall.abandoned / d.lcall.calls > .15) add('y', `${pct(d.lcall.abandoned / d.lcall.calls)} of calls abandoned in ${mon(d.lcall.month)}`, `${d.lcall.abandoned} of ${d.lcall.calls} inbound calls. Check phone routing / after-hours answering before reading it as lost demand.`, 'Ops / Dispatch · ST 2246', 'mk');
   if (d.rv.w30 && d.rv.w30.unanswered > 0) add('y', `${d.rv.w30.unanswered} Google reviews in 30 days have no reply`, `Average rating ${d.rv.w30.avg}★ over 30 days (goal ${kpi(17) || 4.7}★).`, 'Brand · Birdeye', 'mk');
   if (d.rv.w7 && d.rv.w7.low > 0) add('y', `${d.rv.w7.low} low rating${d.rv.w7.low > 1 ? 's' : ''} (3★ or less) this week`, 'Call the customer and reply on Google.', 'Brand · Birdeye', 'mk');
@@ -232,8 +236,8 @@ function botBox() {
     return `<div class="feed" title="${esc(b.detail || b.note || '')}"><span class="dot" style="background:${c}"></span><b>${esc(b.bot)}</b><span class="ft">${esc(tt)}</span></div>`; }).join('')}</div>
   <div class="cs" style="margin-top:8px">Time = last load of each bot's main feed (e.g. the action list for Chief of Staff). Dot turns yellow if any feed it owns is late. Hover for detail.</div></div>`;
 }
-const right = () => `<div class="right"><div class="desk">${lookBox()}</div>${botBox()}</div>`;
-const mobLook = () => `<div class="mob">${lookBox()}</div>`;
+const right = () => `<div class="right"><a class="todaylink desk" href="#today" data-go="today"><b>📋 Today</b><span>What needs you today, good news and bad trends now live on the Today tab.</span></a>${botBox()}</div>`;
+const mobLook = () => '';
 
 // ---------- Overview
 function pageOv() {
@@ -381,8 +385,101 @@ function pageEst() {
     ${chartBox('Open estimates by age', `Dollar value of open estimates · ${L('FACT')} ST · ${esc(ct(e.as_of))}`, c1)}
     ${chartBox('Jobs booked by week', `All departments · ${L('FACT')} ST jobs`, c2)}
    </div>
+   ${leaks()}
   </div>${right()}</div>`;
 }
+
+// ---------- Revenue leaks (load_leaks.py, daily): heard-not-estimated, missed calls, reschedules & cancels by tech
+let hotBusy = false;
+const LK_FEEDS = ['dash_est_followup', 'dash_hot_leads', 'dash_leak_calls', 'dash_leak_resched'];
+function leakBanner() {
+  if (!S.feeds) return '';
+  const bad = LK_FEEDS.map(feed).filter(f => f.status !== 'OK');
+  return bad.length ? `<div class="banner warn">⚠ Late data in this section: ${bad.map(f => `${esc(f.label)} (${esc(String(f.status).toLowerCase())}, last load ${esc(ct(f.last_loaded_at))})`).join('; ')}. Gray tiles are not current.</div>` : '';
+}
+const rate = (n, d) => d ? pct(n / d) : '–';
+function leaks() {
+  if (!S.lk_rs) return '';
+  const hs = S.lk_hot_sum || {}, hot = S.lk_hot || [], cs = S.lk_calls_sum || {}, rec = S.lk_calls_recon || {}, cd = S.lk_calls_daily || [];
+  const rs = w => S.lk_rs.filter(r => r.window_days === w);
+  const comp = w => rs(w).find(r => r.scope === 'company') || {};
+  const elec = w => rs(w).find(r => r.scope === 'bu_group' && r.name === 'Electrical') || {};
+  const c30 = comp(30), e30 = elec(30), c7 = comp(7), e7 = elec(7);
+  const jv = w => rs(w).filter(r => r.scope === 'tech' && r.bu_group === 'Electrical' && r.appts >= 3);
+  const done7 = cd.filter(r => daysOld(r.ct_date) >= 1 && daysOld(r.ct_date) <= 7);
+  const m7 = sum(done7, r => r.missed), in7 = sum(done7, r => r.lead_inbound), un7 = sum(done7, r => r.unresolved_numbers);
+  const recCf = rec.pct == null ? [85, 'No tie-out to ServiceTitan report 2319 yet.'] : rec.pct >= 100 ? [100, `Missed-call IDs tie exactly to ServiceTitan report 2319 (Unbooked and Abandoned Calls) for ${md(rec.period_from)}–${md(rec.period_to)}.`] : [Math.min(99, Math.max(0, Math.round(rec.pct))), `${rec.matched} of ${Math.max(rec.export_n, rec.report_n)} missed calls match ST report 2319 for ${md(rec.period_from)}–${md(rec.period_to)} (${rec.pct}%). ${rec.note || ''}`];
+  const cbCf = [80, `ESTIMATE: "no callback" = no outbound call to that number, no booked call and no new job for that customer within ${cs.hours || 4} h in ServiceTitan. Calls or texts from cell phones outside ServiceTitan are not seen.`];
+  const hotCf = [70, 'ESTIMATE: names are matched from recordings to ServiceTitan customers by machine. Hand spot-check found some false matches; read the snippet before acting.'];
+  const rsCf = [75, 'ESTIMATE: ServiceTitan logs who clicked Reschedule (office almost always), not who asked. Reschedules = days a job was moved, excluding the first hour after booking and same-day time shuffles. Initiator comes from cancel reasons and job notes only.'];
+  const fs = S.lk_fu_sum || {};
+  const tiles = [
+    tile({cf:[85, 'ESTIMATE: canceled job value = job total, else the largest estimate option on the job, else the median completed ticket for that department. "Rebooked" = same customer got a new job within 14 days (or the job was un-canceled).'], title:'Canceled $, not rebooked (30 d)', val:usd(c30.canceled_value_lost), st:(c30.canceled_value_lost || 0) > 20000 ? 'y' : 'n', label:'ESTIMATE', feed:'dash_leak_resched', asof:c30.as_of, sub:`${c30.cancels_not_rebooked || 0} of ${c30.cancels || 0} cancels not rebooked · ${c30.saved_pct != null ? pct(c30.saved_pct) : '–'} of at-risk jobs saved by a reschedule · ${c30.cancel_tech || 0} tech-caused`, src:'ST cancel log + jobs'}),
+    tile({cf:[98, 'Straight from ServiceTitan report 85159837 Unsold Estimates (its own follow-up count). Options on one job are grouped; the largest option is shown.'], title:'Estimates, no follow-up after 48 h', val:usd(fs.amt), st:(fs.n || 0) > 20 ? 'r' : (fs.n || 0) > 5 ? 'y' : 'g', label:'FACT', feed:'dash_est_followup', asof:fs.as_of, sub:`${fs.n || 0} open estimates (2–30 days old) with zero follow-ups logged in ServiceTitan · ${fs.called || 0} did get an outbound call`, src:'ST 85159837'}),
+    tile({cf:hotCf, title:'Heard, not estimated', val:String(hs.open || 0), st:(hs.open || 0) > 5 ? 'y' : 'n', label:'ESTIMATE', feed:'dash_hot_leads', asof:hs.as_of, sub:`Buying talk about a named customer in the last 30 days of recordings with no estimate. ${hs.estimated || 0} mentions already have one · ${hs.dropped || 0} dropped`, src:'Plaud · Fireflies · Fieldy + ST'}),
+    tile({cf:cbCf, title:`Missed calls, no callback in ${cs.hours || 4} h (7 d)`, val:String(cs.open7 || 0), st:(cs.open7 || 0) > 20 ? 'r' : (cs.open7 || 0) > 5 ? 'y' : 'n', label:'ESTIMATE', feed:'dash_leak_calls', asof:cs.as_of, sub:`${cs.open7_existing || 0} are existing customers · ${cs.open7_short || 0} hung up in under 10 s · 30 days ${cs.open30 || 0}`, src:'ST calls'}),
+    tile({cf:recCf, title:'Missed-call rate (last 7 days)', val:rate(m7, in7), st:in7 && m7 / in7 > .3 ? 'r' : in7 && m7 / in7 > .15 ? 'y' : 'g', label:'FACT', feed:'dash_leak_calls', asof:cs.as_of, sub:`${m7} abandoned or unbooked of ${in7} inbound lead calls · ${un7} callers never got a callback`, src:'ST calls', spark:cd.filter(r => daysOld(r.ct_date) >= 1).map(r => r.lead_inbound ? Math.round(r.missed / r.lead_inbound * 100) : null)}),
+    tile({cf:rsCf, title:'⚡ Electrical vs company (30 d)', val:`${rate(e30.reschedules + e30.cancels, e30.appts)} <small>vs ${rate(c30.reschedules + c30.cancels, c30.appts)}</small>`, st:e30.appts && c30.appts && (e30.reschedules + e30.cancels) / e30.appts > 1.2 * (c30.reschedules + c30.cancels) / c30.appts ? 'r' : 'g', label:'ESTIMATE', feed:'dash_leak_resched', asof:c30.as_of, sub:`Reschedules ${rate(e30.reschedules, e30.appts)} (co. ${rate(c30.reschedules, c30.appts)}) · cancels ${rate(e30.cancels, e30.appts)} (co. ${rate(c30.cancels, c30.appts)}) on ${e30.appts || 0} jobs · tech-caused ${(e30.cancel_tech || 0) + (e30.resched_tech || 0)}`, src:'ST job history + cancel log'}),
+  ];
+  const fuT = table([
+    {h:'Customer · estimate', f:r => `<b>${esc(r.customer_name)}</b><div class="mini">${esc(r.top_option)}${r.options > 1 ? ` (+${r.options - 1} option${r.options > 2 ? 's' : ''})` : ''} · ${esc(r.business_unit || '')}</div>`},
+    {h:'Amount', n:1, f:r => `<b>${usd(r.max_subtotal)}</b><div class="mini">${r.age_days} d old</div>`},
+    {h:'Signals', f:r => `<div class="mini">${r.email_sent ? 'emailed' : 'not emailed'}${r.viewed_online ? ' · <b>viewed online</b>' : ''}${r.outbound_call_after ? ' · outbound call (not logged as follow-up)' : ''}</div><div class="mini">By ${esc(r.sold_by || '—')} · ${r.phone ? `<a href="tel:${esc(r.phone)}">call</a>` : ''}</div>`}], S.lk_fu || [], 'Every open estimate from the last 30 days has a follow-up logged.');
+  const hotT = table([
+    {h:'Customer · heard', f:r => `<b>${esc(r.customer_name)}</b><div class="mini">${esc(md(r.said_date))} · ${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.source)}</a>` : esc(r.source)} · ${esc(r.speaker || '')}</div><div class="mini">“${esc(String(r.snippet).replace(/^…/, '').slice(0, 260))}…”</div>`},
+    {h:'Owner · nudge', f:r => `<b>${esc(r.suggested_owner)}</b><div class="mini">${esc(r.nudge)}</div><div class="mini">Match ${r.match_count === 1 ? 'unique' : r.match_count + ' ST customers'} · ${cfBadgeMini(r.confidence)}</div>`},
+    {h:'', f:r => `<button class="pb" data-hot="drop" data-id="${r.id}" title="Drop this lead" aria-label="Drop this lead">✕ Drop</button>`}], hot, 'Nothing open: every buying mention in the recordings has an estimate in ServiceTitan.');
+  const callT = table([
+    {h:'Caller', f:r => `<b>${esc(r.name || 'Unknown caller')}</b>${r.existing_customer ? ' <span class="badge amber">CUSTOMER</span>' : ''}<div class="mini"><a href="tel:${esc(r.phone)}">${esc(r.phone.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3'))}</a>${r.n_calls > 1 ? ` · called ${r.n_calls}×` : ''}</div>`},
+    {h:'When', f:r => `${esc(ct(r.called_at))}<div class="mini">${esc(r.call_type)} · ${r.duration_s != null ? r.duration_s + ' s' : ''}</div>`},
+    {h:'Campaign · why', f:r => `${esc(r.campaign || '—')}<div class="mini">${esc(r.reason || '')}</div>`}], S.lk_calls || [], 'No missed callers waiting.');
+  const techRows = rs(30).filter(r => r.scope === 'tech' && r.appts >= 5).sort((a, b) => (b.resched_rate + b.cancel_rate) - (a.resched_rate + a.cancel_rate));
+  const crR = c30.appts ? c30.reschedules / c30.appts : 0, crC = c30.appts ? c30.cancels / c30.appts : 0;
+  const hl = (v, avg) => v == null ? '–' : `<b style="color:${v > avg * 1.2 ? C.red : v < avg * .8 ? C.green : C.navy}">${pct(v)}</b>`;
+  const techT = table([
+    {h:'Technician', f:r => `${r.bu_group === 'Electrical' ? '⚡ ' : ''}<b>${esc(r.name)}</b><div class="mini">${esc(r.bu_group || '')} · ${r.appts} jobs</div>`},
+    {h:'Tech-caused', n:1, f:r => `<b style="color:${(r.cancel_tech + r.resched_tech) > 0 ? C.red : C.green}">${(r.cancel_tech || 0) + (r.resched_tech || 0)}</b><div class="mini">counted against tech</div>`},
+    {h:'All resched', n:1, f:r => `${hl(r.resched_rate, crR)}<div class="mini">${r.reschedules}${r.resched_customer ? ` · ${r.resched_customer} cust` : ''}</div>`},
+    {h:'All cancels', n:1, f:r => `${hl(r.cancel_rate, crC)}<div class="mini">${r.cancels}${r.cancels ? ` · ${r.cancel_customer} cust · ${r.cancel_office} office` : ''}${r.canceled_value_lost ? ` · ${usd(r.canceled_value_lost)} lost` : ''}</div>`},
+    {h:'Recalls', n:1, hs:1, f:r => r.recall_events || 0}],
+    [{name:'Company average', bu_group:'all', appts:c30.appts, reschedules:c30.reschedules, resched_rate:crR, resched_tech:c30.resched_tech, resched_customer:c30.resched_customer, cancels:c30.cancels, cancel_rate:crC, cancel_customer:c30.cancel_customer, cancel_office:c30.cancel_office, cancel_tech:c30.cancel_tech, canceled_value_lost:c30.canceled_value_lost, recall_events:c30.recall_events}].concat(techRows));
+  const quiet = rs(30).filter(r => r.scope === 'tech' && r.customer_cancels_aged >= 3).map(r => ({...r, nl:r.no_later_job / r.customer_cancels_aged})).sort((x, y) => y.nl - x.nl);
+  const coNl = c30.customer_cancels_aged ? c30.no_later_job / c30.customer_cancels_aged : null;
+  const elecEv = (S.lk_rs_ev || []).filter(r => r.bu_group === 'Electrical').slice(0, 14);
+  const evT = table([
+    {h:'Date', f:r => `${esc(md(r.ct_date))}<div class="mini">${r.kind === 'cancel' ? 'CANCEL' : 'resched'}</div>`},
+    {h:'Tech · customer', f:r => `<b>${esc((r.technicians || []).join(', ') || 'no tech yet')}</b><div class="mini">${esc(r.customer || '')}</div>`},
+    {h:'Reason / who asked', f:r => `${esc(r.reason || '')}${r.memo ? `<div class="mini">“${esc(r.memo.slice(0, 120))}”</div>` : ''}<div class="mini">${esc(r.initiator)} · ${esc(r.initiator_basis || '')} · entered by ${esc(r.entered_by || '?')}${r.late_notice ? ' · same day' : ''}${r.after_dispatch ? ' · after dispatch' : ''}${r.is_recall ? ' · RECALL' : ''}${r.kind === 'cancel' ? (r.rebooked ? ' · rebooked' : ` · not rebooked (${usd(r.value)})`) : ''}</div>`}], elecEv, 'No electrical reschedules or cancels in 30 days.');
+  const bars = barChart({labels:['1 d', '7 d', '30 d'].flatMap(l => [l + ' ⚡', l + ' all']), vals:[1, 7, 30].flatMap(w => { const e = elec(w), c = comp(w); return [e.appts ? Math.round(1000 * (e.reschedules + e.cancels) / e.appts) / 10 : 0, c.appts ? Math.round(1000 * (c.reschedules + c.cancels) / c.appts) / 10 : 0]; }), colors:[C.amber, C.teal, C.amber, C.teal, C.amber, C.teal], fmt:v => v + '%'});
+  return `${section('Revenue leaks', 'Daily · biggest money first · read-only from ServiceTitan and recordings')}${leakBanner()}
+   <div class="grid g3">${tiles.join('')}</div>
+   <div class="chart"><h3>1 · Estimates with no follow-up after 48 h (${(S.lk_fu || []).length})</h3><div class="cs">Open estimates created 2–30 days ago where ServiceTitan shows zero follow-ups. Biggest first. ${L('FACT')} ServiceTitan report 85159837 Unsold Estimates · ${esc(ct(fs.as_of))}</div>${fuT}</div>
+   <div class="chart"><h3>2 · Heard but not estimated (${hot.length})</h3><div class="cs">A tech or manager talked about a real customer with buying intent (replacement, quote, new system, send a price) and ServiceTitan shows no estimate on or after that day (or 2 days before). Stays here until an estimate shows up or you drop it. ${L('ESTIMATE')} matched by machine, spot-check before acting · checked ${esc(ct(hs.as_of))}</div><div id="hmsg" class="pmsg"></div>${hotT}
+    ${(S.lk_hot_dropped || []).length ? `<details class="fold"><summary>Dropped (${S.lk_hot_dropped.length})</summary>${S.lk_hot_dropped.map(r => `<div class="act"><div><b>${esc(r.customer_name)}</b><div class="mini">heard ${esc(md(r.said_date))} · dropped ${esc(ct(r.dropped_at))}</div></div><div class="actd"><button class="pb" data-hot="restore" data-id="${r.id}">↺ Restore</button></div></div>`).join('')}</details>` : ''}</div>
+   <div class="chart"><h3>3 · Missed calls to call back (last 7 days)</h3><div class="cs">Inbound calls that were abandoned or not booked, with no callback, booking or new job within ${cs.hours || 4} hours. One row per number; customers and real conversations first, hang-ups under 10 s last. ${L('ESTIMATE')} callback check · ${L('FACT')} call list from ST · tie-out to ST report 2319: ${rec.pct != null ? rec.pct + '%' : 'n/a'} · ${esc(ct(cs.as_of))}</div>${callT}</div>
+   <div class="charts two">
+    ${chartBox('4 · Reschedules & cancels by technician (30 days)', `Only tech-caused events (cancel reason "Tech was late", a note saying the tech couldn\'t make it, or the tech moving his own job) count against a tech. Rates include every cause, for context; red = 20%+ above company average. Recalls are kept out and shown separately. ${L('ESTIMATE')} reschedules · ${L('FACT')} cancels · ${esc(ct(c30.as_of))}`, techT)}
+    ${chartBox('Electrical vs company: reschedules + cancels', `Per 100 jobs, last 1 / 7 / 30 days · ⚡ = electrical (service + install) · ${L('ESTIMATE')}`, bars)}
+   </div>
+   <details class="fold"><summary>Quiet check: canceled customers with no later job</summary><div class="cs">Customer-reason cancels at least 7 days old where that customer has no other job in ServiceTitan since. Most canceled customers never come back, so only a tech far above the company rate is worth a quiet look; this is not evidence of anything on its own. Company: ${c30.no_later_job || 0} of ${c30.customer_cancels_aged || 0}${coNl != null ? ' (' + pct(coNl) + ')' : ''} · ${L('ESTIMATE')}</div>
+    ${table([{h:'Technician', f:r => esc(r.name)}, {h:'No later job', n:1, f:r => `${r.no_later_job} of ${r.customer_cancels_aged}`}, {h:'Rate', n:1, f:r => hl(r.nl, coNl || 1)}], quiet, 'No technician has 3+ aged customer cancels.')}</details>
+   <div class="chart"><h3>⚡ Electrical reschedules & cancels, one by one (30 days)</h3><div class="cs">ServiceTitan records who clicked, not who asked. "customer" = the office picked a customer cancel reason or a note says the customer asked. Read the memo. ${L('FACT')} events · ${L('ESTIMATE')} who asked</div>${evT}</div>`;
+}
+const cfBadgeMini = p => `<span class="cfm"><i style="background:${CF_COL(p || 0)}"></i>${p || 0}% match</span>`;
+async function hotDo(action, id) {
+  if (hotBusy) return; hotBusy = true;
+  const msg = document.getElementById('hmsg'); if (msg) { msg.textContent = 'Saving…'; msg.className = 'pmsg on'; }
+  try {
+    if (CFG) await rpc('dash_hot_leads', {p_action:action, p_id:Number(id)});
+    else await jfetch('api/hot_leads', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action, id:Number(id)})});
+    const r = (S.lk_hot || []).find(x => String(x.id) === String(id)) || (S.lk_hot_dropped || []).find(x => String(x.id) === String(id));
+    if (action === 'drop' && r) { S.lk_hot = S.lk_hot.filter(x => x !== r); S.lk_hot_dropped = [{...r, dropped_at:new Date().toISOString()}].concat(S.lk_hot_dropped || []); S.lk_hot_sum.open--; S.lk_hot_sum.dropped++; }
+    if (action === 'restore' && r) { S.lk_hot_dropped = S.lk_hot_dropped.filter(x => x !== r); S.lk_hot_sum.dropped--; }
+    renderPage('est');
+  } catch (e) { if (msg) msg.textContent = 'Not saved: ' + e.message; }
+  finally { hotBusy = false; }
+}
+document.addEventListener('click', e => { const b = e.target.closest('button[data-hot]'); if (!b) return; e.preventDefault(); hotDo(b.dataset.hot, b.dataset.id); });
 
 // ---------- Action tracker = Stephen's Priorities list (ops.priorities). ~7 cards, the rest folded under Backlog (N).
 const PR = () => S.priorities || {open:[], closed:[], visible:7};
@@ -520,7 +617,9 @@ const pageWar = () => `<div class="cols"><div class="left">${soon('Warranty', 'O
 const pagePay = () => `<div class="cols"><div class="left">${soon('Payroll & commission', 'Labor cost as a percent of revenue, commission owed by technician, and overtime hours.', 'Read access to ServiceTitan payroll exports or the payroll provider, plus the new commission plan rules. The Payroll bot feed is not live yet.')}</div>${right()}</div>`;
 const pageLook = () => `<div class="cols"><div class="left">${soon('🔍 Look up', 'Type a customer, invoice, job or estimate number and see balance, open estimates, last visit and reviews on one card.', 'A search endpoint on the read-only database role. Planned for the production build.')}</div>${right()}</div>`;
 
-const PAGES = {ov:pageOv, ar:pageAR, un:pageUnsent, est:pageEst, act:pageAct, war:pageWar, fl:pageFl, mk:pageMk, pay:pagePay, look:pageLook};
+// Today (same-day) and Finance (AR + unsent) live in today.js. Old #ar / #un links open Finance.
+const PAGES = {today:pageToday, ov:pageOv, est:pageEst, mk:pageMk, fin:pageFin, act:pageAct, pay:pagePay, fl:pageFl, war:pageWar, look:pageLook};
+const PAGE_ALIAS = {ar:'fin', un:'fin'};
 const cfLegend = () => `<div class="cflegend" title="Green 100% = ties exactly to the source of record (ST report or QBO closed month). Yellow 89-99% = straight from the source but not tied out yet, or a small known gap. Red under 89% = estimate, forecast, proxy, partial month or late feed."><b>Data confidence %:</b><span><i style="background:${C.green}"></i>100% ties exactly</span><span><i style="background:${C.amber}"></i>89–99% minor gaps</span><span><i style="background:${C.red}"></i>under 89% estimate / partial / late</span><em>Tap a % chip for the reason.</em></div>`;
 function banner() {
   const bad = S.bots.filter(b => b.status !== 'OK' && b.status !== 'NOT LIVE');
@@ -627,7 +726,8 @@ async function start() {
   load();
 }
 function go(p) {
-  if (!PAGES[p]) p = 'ov';
+  p = PAGE_ALIAS[p] || p;
+  if (!PAGES[p]) p = 'today';
   document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x.dataset.p === p));
   document.querySelectorAll('.page').forEach(x => x.classList.toggle('on', x.id === 'p-' + p));
   history.replaceState(null, '', '#' + p); window.scrollTo(0, 0);
@@ -635,11 +735,11 @@ function go(p) {
 }
 document.addEventListener('click', e => {
   const b = e.target.closest('button.cf'); if (!b) return; e.preventDefault(); e.stopPropagation();
-  const box = b.closest('.tile').querySelector('.cfr'); const open = !box.hidden && box.dataset.for === b.dataset.cfr;
+  const box = b.closest('.tile, .trw, .pc, .tleak').querySelector('.cfr'); const open = !box.hidden && box.dataset.for === b.dataset.cfr;
   box.hidden = open; box.dataset.for = b.dataset.cfr; box.textContent = open ? '' : b.textContent + ' confidence: ' + b.dataset.cfr;
 });
 document.getElementById('tabs').addEventListener('click', e => { const b = e.target.closest('button.tab'); if (b) go(b.dataset.p); });
-document.querySelector('main').addEventListener('click', e => { const a = e.target.closest('[data-go]'); if (a) { e.preventDefault(); go(a.dataset.go); } });
-go(location.hash.slice(1) || 'ov');
+document.querySelector('main').addEventListener('click', e => { if (e.target.closest('button.cf')) return; const a = e.target.closest('[data-go]'); if (a) { e.preventDefault(); go(a.dataset.go); } });
+go(location.hash.slice(1) || 'today');
 start(); setInterval(() => { if (S) load(); }, 5 * 60e3);
 document.addEventListener('visibilitychange', () => { if (!document.hidden && S && Date.now() - new Date(S.generated_at) > 5 * 60e3) load(); });
