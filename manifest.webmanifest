@@ -1,0 +1,23 @@
+{
+ "name": "Advantage HPE Company Dashboard",
+ "short_name": "AHPE Dash",
+ "description": "Advantage HPE company dashboard (internal).",
+ "start_url": "./",
+ "scope": "./",
+ "display": "standalone",
+ "background_color": "#003B49",
+ "theme_color": "#003B49",
+ "icons": [
+  {
+   "src": "icon-192.png",
+   "sizes": "192x192",
+   "type": "image/png",
+   "purpose": "any"
+  },
+  {
+   "src": "apple-touch-icon.png",
+   "sizes": "180x180",
+   "type": "image/png"
+  }
+ ]
+}

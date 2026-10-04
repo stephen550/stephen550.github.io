@@ -1,0 +1,618 @@
+'use strict';
+const C = {navy:'#003B49', teal:'#007D8A', red:'#BE3A34', green:'#1f8a4c', amber:'#d98a00', mut:'#5b6b70', gray:'#8a979b', light:'#c9d6d9'};
+const COL = {g:C.green, y:C.amber, r:C.red, n:C.teal};
+const LAB = {g:'ON TRACK', y:'WATCH', r:'OFF TRACK', n:'INFO'};
+const TZ = 'America/Chicago';
+let S = null;
+
+// ---------- formatting
+function usd(v, plus) {
+  if (v === null || v === undefined || isNaN(v)) return '–';
+  const a = Math.abs(v), s = v < 0 ? '-' : (plus && v > 0 ? '+' : '');
+  if (a >= 1e6) return s + '$' + (a / 1e6).toFixed(2) + 'M';
+  if (a >= 1e3) return s + '$' + (a / 1e3).toFixed(1) + 'K';
+  return s + '$' + Math.round(a);
+}
+const usdK = v => Math.abs(v) >= 1e6 ? (v < 0 ? '-' : '') + '$' + (Math.abs(v) / 1e6).toFixed(1) + 'M' : (v < 0 ? '-' : '') + '$' + Math.round(Math.abs(v) / 1000) + 'K';
+const usdM = v => '$' + (v / 1e6).toFixed(1) + 'M';
+const pct = (v, d = 0) => (v * 100).toFixed(d) + '%';
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const mon = (m, y) => { const d = new Date(m.slice(0, 10) + 'T12:00:00Z'); return d.toLocaleString('en-US', {month:'short', timeZone:'UTC'}) + (y ? ' ' + String(d.getUTCFullYear()).slice(2) : ''); };
+function ct(ts) {
+  if (!ts) return 'no data';
+  const d = new Date(ts), now = new Date();
+  const day = x => x.toLocaleDateString('en-US', {timeZone:TZ});
+  const t = d.toLocaleTimeString('en-US', {timeZone:TZ, hour:'numeric', minute:'2-digit'});
+  if (day(d) === day(now)) return t;
+  return d.toLocaleDateString('en-US', {timeZone:TZ, month:'short', day:'numeric'}) + (now - d < 6 * 864e5 ? ' ' + t : '');
+}
+const feed = k => (S.feeds.find(f => f.feed === k) || {status:'NO DATA', label:k});
+const last = a => a[a.length - 1];
+
+// ---------- building blocks
+function spark(vals, color, goal) {
+  vals = vals.filter(v => v !== null && v !== undefined);
+  if (vals.length < 2) return '';
+  const w = 110, h = 38, all = goal !== undefined ? vals.concat([goal]) : vals;
+  const lo = Math.min(...all), hi = Math.max(...all), rng = (hi - lo) || 1;
+  const pts = vals.map((v, i) => [i * (w - 8) / (vals.length - 1) + 4, h - 4 - (v - lo) / rng * (h - 8)]);
+  let g = '';
+  if (goal !== undefined) { const gy = h - 4 - (goal - lo) / rng * (h - 8); g = `<line x1="0" x2="${w}" y1="${gy.toFixed(1)}" y2="${gy.toFixed(1)}" stroke="#9aa9ad" stroke-dasharray="4 3" stroke-width="1.5"/>`; }
+  const [lx, ly] = last(pts);
+  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${g}<polyline points="${pts.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ')}" fill="none" stroke="${color}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="4.5" fill="${color}"/></svg>`;
+}
+function tile(o) {
+  const f = o.feed ? feed(o.feed) : {status:'OK'};
+  const stale = f.status !== 'OK';
+  const c = stale ? C.gray : COL[o.st];
+  const pill = stale ? `⚠ ${esc(f.status)}` : LAB[o.st];
+  return `<div class="tile${o.hero ? ' hero' : ''}${stale ? ' stale' : ''}" style="border-top-color:${c}">
+ <div class="trow"><div class="ttitle">${esc(o.title)}</div><span class="st" style="background:${c}">${pill}</span></div>
+ <div class="vrow"><div class="val">${o.val}</div>${o.spark ? spark(o.spark, c, o.goal) : ''}</div>
+ <div class="sub">${o.sub}</div>
+ <div class="own"><span class="lab ${o.label}">${o.label}</span>${esc(o.src)} · as of ${esc(ct(o.asof))}</div></div>`;
+}
+function chartBox(title, sub, svg, extra) { return `<div class="chart"><h3>${title}</h3><div class="cs">${sub}</div>${svg}${extra || ''}</div>`; }
+
+// line chart: series [{vals, color, width, dash, label}], labels [], hlines [{v,label,color}], estFrom index (hollow points from there)
+function lineChart({labels, series, hlines = [], estFrom = 1e9, W = 600, H = 300, fmt = usdK}) {
+  const L = 54, R = W - 92, T = 14, B = H - 30;
+  const vals = series.flatMap(s => s.vals).concat(hlines.map(h => h.v)).filter(v => v !== null);
+  let lo = Math.min(0, ...vals), hi = Math.max(...vals); const pad = (hi - lo) * .06; lo -= pad; hi += pad;
+  const y = v => B - (v - lo) / (hi - lo) * (B - T), x = i => L + i * (R - L) / Math.max(1, labels.length - 1);
+  const o = [];
+  const step = niceStep((hi - lo) / 4);
+  for (let g = Math.ceil(lo / step) * step; g <= hi; g += step) o.push(`<line x1="${L}" x2="${R}" y1="${y(g)}" y2="${y(g)}" stroke="${g === 0 ? '#9aa9ad' : '#e3eaec'}" stroke-width="${g === 0 ? 1.5 : 1}"/><text x="${L - 6}" y="${y(g) + 4}" text-anchor="end" font-size="12" fill="${C.mut}">${fmt(g)}</text>`);
+  const every = Math.ceil(labels.length / (String(labels[0]).length > 4 ? 7 : 13)); labels.forEach((l, i) => { if ((labels.length - 1 - i) % every === 0) o.push(`<text x="${x(i)}" y="${B + 19}" text-anchor="middle" font-size="12" fill="${C.mut}">${l}</text>`); });
+  hlines.forEach(h => o.push(`<line x1="${L}" x2="${R}" y1="${y(h.v)}" y2="${y(h.v)}" stroke="${h.color}" stroke-dasharray="7 5" stroke-width="2.2"/><text x="${R + 6}" y="${y(h.v) + 4}" font-size="12.5" font-weight="800" fill="${h.color}">${h.label}</text>`));
+  series.forEach(s => {
+    const pts = s.vals.map((v, i) => v === null ? null : [x(i), y(v)]).filter(Boolean);
+    o.push(`<polyline points="${pts.map(p => p.join(',')).join(' ')}" fill="none" stroke="${s.color}" stroke-width="${s.width || 3.5}" ${s.dash ? 'stroke-dasharray="' + s.dash + '"' : ''} stroke-linejoin="round"/>`);
+    s.vals.forEach((v, i) => { if (v !== null && (i === s.vals.length - 1 || i >= estFrom)) o.push(`<circle cx="${x(i)}" cy="${y(v)}" r="5" fill="${i >= estFrom ? '#fff' : s.color}" stroke="${s.color}" stroke-width="2.5"/>`); });
+    const lv = last(s.vals); if (s.label && lv !== null) o.push(`<text x="${R + 6}" y="${y(lv) + (s.dy || 4)}" font-size="13" font-weight="800" fill="${s.color}">${s.label}</text>`);
+  });
+  return `<svg viewBox="0 0 ${W} ${H}">${o.join('')}</svg>`;
+}
+function niceStep(r) { const p = Math.pow(10, Math.floor(Math.log10(Math.abs(r) || 1))); for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= r) return m * p; return 10 * p; }
+
+// bars: labels, vals, ly (ghost), colors per bar, est flags
+function barChart({labels, vals, ly, colors, est = [], W = 600, H = 300, fmt = usdK, goal, goalLabel}) {
+  const L = 50, R = W - 10, T = 16, B = H - 30;
+  const all = vals.concat(ly || []).concat(goal !== undefined ? [goal] : []).filter(v => v !== null && v !== undefined);
+  let lo = Math.min(0, ...all), hi = Math.max(0, ...all); const pad = (hi - lo) * .08; hi += pad; if (lo < 0) lo -= pad;
+  const y = v => B - (v - lo) / (hi - lo) * (B - T);
+  const n = labels.length, bw = (R - L) / n, o = [];
+  o.push(`<defs><pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" fill="#fff"/><line x1="0" y1="0" x2="0" y2="7" stroke="${C.amber}" stroke-width="4"/></pattern></defs>`);
+  const step = niceStep((hi - lo) / 4);
+  for (let g = Math.ceil(lo / step) * step; g <= hi; g += step) o.push(`<line x1="${L}" x2="${R}" y1="${y(g)}" y2="${y(g)}" stroke="${g === 0 ? '#9aa9ad' : '#eef3f4'}"/><text x="${L - 6}" y="${y(g) + 4}" text-anchor="end" font-size="12" fill="${C.mut}">${fmt(g)}</text>`);
+  labels.forEach((l, i) => {
+    const cx = L + bw * i + bw / 2, w = bw * .62;
+    if (ly && ly[i] !== null && ly[i] !== undefined) { const v = ly[i]; o.push(`<rect x="${cx - w / 2 - 4}" y="${Math.min(y(v), y(0))}" width="${w + 8}" height="${Math.abs(y(v) - y(0))}" rx="4" fill="#dfe7e9"/>`); }
+    const v = vals[i];
+    if (v !== null && v !== undefined) {
+      const fill = est[i] ? 'url(#hatch)' : colors[i];
+      o.push(`<rect x="${cx - w / 2}" y="${Math.min(y(v), y(0))}" width="${w}" height="${Math.max(1, Math.abs(y(v) - y(0)))}" rx="4" fill="${fill}" ${est[i] ? 'stroke="' + C.amber + '" stroke-width="2"' : ''}/>`);
+      if (n <= 13) o.push(`<text x="${cx}" y="${v >= 0 ? y(v) - 4 : y(v) + 13}" text-anchor="middle" font-size="${n > 9 ? 10.5 : 12}" font-weight="800" fill="${C.navy}">${fmt(v)}</text>`);
+    }
+    o.push(`<text x="${cx}" y="${B + 19}" text-anchor="middle" font-size="12" fill="${C.mut}">${l}</text>`);
+  });
+  if (goal !== undefined) o.push(`<line x1="${L}" x2="${R}" y1="${y(goal)}" y2="${y(goal)}" stroke="${C.navy}" stroke-dasharray="7 5" stroke-width="2.2"/><text x="${R}" y="${y(goal) - 5}" text-anchor="end" font-size="12" font-weight="800" fill="${C.navy}">${goalLabel || ''}</text>`);
+  return `<svg viewBox="0 0 ${W} ${H}">${o.join('')}</svg>`;
+}
+function legend(items) { return `<div class="cs" style="margin-top:4px">${items.map(([c, t, hatch]) => `<span style="display:inline-flex;align-items:center;gap:5px;margin-right:12px"><span style="width:12px;height:12px;border-radius:3px;background:${hatch ? 'repeating-linear-gradient(45deg,#d98a00 0 3px,#fff 3px 6px)' : c};${hatch ? 'border:1.5px solid #d98a00' : ''}"></span>${t}</span>`).join('')}</div>`; }
+
+// ---------- data helpers
+function season() {
+  const now = new Date(new Date().toLocaleString('en-US', {timeZone:TZ}));
+  const y = now.getMonth() >= 9 ? now.getFullYear() : now.getFullYear() - 1;
+  const start = `${y}-10-01`, end = `${y + 1}-04-01`;
+  const cur = S.rev_month.filter(r => r.month >= start && r.month < end).reduce((a, r) => a + r.revenue, 0);
+  return {cur, ly: S.std_ly.value, asof: last(S.rev_month).as_of, start};
+}
+function gmByMonth() { return S.jc.map(r => ({month:r.month, gm:(r.rev - r.cost) / r.rev, rev:r.rev, cost:r.cost, jobs:r.jobs, as_of:r.as_of})); }
+const kpi = id => (S.kpi.find(k => k.kpi_id === id) || {}).target_value;
+
+// ---------- shared helpers (v2: 10-tab layout from the approved mockup)
+const md = d => { const x = new Date(d.slice(0, 10) + 'T12:00:00Z'); return (x.getUTCMonth() + 1) + '/' + x.getUTCDate(); };
+const curMonth = () => { const n = new Date(new Date().toLocaleString('en-US', {timeZone:TZ})); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-01`; };
+const curWeek = () => { const n = new Date(new Date().toLocaleString('en-US', {timeZone:TZ})); const d = (n.getDay() + 6) % 7; n.setDate(n.getDate() - d); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`; };
+const daysOld = d => Math.floor((Date.now() - new Date(d.length <= 10 ? d + 'T12:00:00' : d)) / 864e5);
+const sum = (a, f) => a.reduce((t, r) => t + (Number(f(r)) || 0), 0);
+const L = (k) => `<span class="lab ${k}">${k}</span>`;
+function table(cols, rows, empty) {
+  if (!rows.length) return `<div class="cs">${empty || 'Nothing to show.'}</div>`;
+  return `<div class="tw"><table><tr>${cols.map(c => `<th class="${c.n ? 'n' : ''}${c.hs ? ' hs' : ''}">${c.h}</th>`).join('')}</tr>${rows.map(r => `<tr>${cols.map(c => `<td class="${c.n ? 'n' : ''}${c.hs ? ' hs' : ''}">${c.f(r)}</td>`).join('')}</tr>`).join('')}</table></div>`;
+}
+function hbars(rows, {fmt = usd, color = C.teal, W = 600} = {}) {
+  if (!rows.length) return '<div class="cs">No data.</div>';
+  const mx = Math.max(...rows.map(r => r.v)) || 1, rowH = 40, lw = 170;
+  return `<svg viewBox="0 0 ${W} ${rows.length * rowH + 6}">${rows.map((r, i) => { const w = r.v / mx * (W - lw - 110); const y = 4 + i * rowH; return `<text x="${lw - 8}" y="${y + 22}" text-anchor="end" font-size="14" font-weight="700" fill="${C.navy}">${esc(String(r.k).slice(0, 22))}</text><rect x="${lw}" y="${y + 4}" width="${Math.max(2, w)}" height="28" rx="4" fill="${r.c || color}"/><text x="${lw + w + 6}" y="${y + 23}" font-size="13.5" font-weight="800" fill="${C.navy}">${r.t || fmt(r.v)}</text>`; }).join('')}</svg>`;
+}
+function stackOwner() {
+  const owners = {}; S.ar_owner_bucket.forEach(r => { const o = owners[r.owner] = owners[r.owner] || [0, 0, 0]; o[r.age_bucket === '0-30' ? 0 : r.age_bucket === '31-60' ? 1 : 2] += r.amt; });
+  const rows = Object.entries(owners).sort((a, b) => sum(b[1], x => x) - sum(a[1], x => x));
+  const mx = Math.max(...rows.map(r => sum(r[1], x => x))) || 1, W = 600, lw = 130, rowH = 56, cols = [C.teal, C.amber, C.red];
+  const bars = rows.map(([o, v], i) => { let x = lw; const y = 8 + i * rowH; const seg = v.map((a, j) => { const w = Math.max(0, a) / mx * (W - lw - 90); const s = `<rect x="${x}" y="${y}" width="${w}" height="38" fill="${cols[j]}"/>`; x += w; return s; }).join('');
+    return `<text x="${lw - 8}" y="${y + 25}" text-anchor="end" font-size="15" font-weight="700" fill="${C.navy}">${esc(o)}</text>${seg}<text x="${x + 6}" y="${y + 25}" font-size="14" font-weight="800" fill="${C.navy}">${usdK(sum(v, a => a))}</text>`; }).join('');
+  return `<svg viewBox="0 0 ${W} ${rows.length * rowH + 12}">${bars}</svg>` + legend([[C.teal, '0–30 days'], [C.amber, '31–60'], [C.red, '60+ days']]);
+}
+function multiLine({labels, series, W = 600, H = 300, fmt = v => v + '%', goal}) {
+  const Lp = 44, R = W - 130, T = 14, B = H - 30, vals = series.flatMap(s => s.vals).filter(v => v !== null).concat(goal !== undefined ? [goal] : []);
+  let lo = Math.min(0, ...vals), hi = Math.max(...vals) * 1.08;
+  const y = v => B - (v - lo) / (hi - lo) * (B - T), x = i => Lp + i * (R - Lp) / Math.max(1, labels.length - 1), o = [];
+  const step = niceStep((hi - lo) / 4);
+  for (let g = Math.ceil(lo / step) * step; g <= hi; g += step) o.push(`<line x1="${Lp}" x2="${R}" y1="${y(g)}" y2="${y(g)}" stroke="#e3eaec"/><text x="${Lp - 6}" y="${y(g) + 4}" text-anchor="end" font-size="12" fill="${C.mut}">${fmt(g)}</text>`);
+  labels.forEach((l, i) => o.push(`<text x="${x(i)}" y="${B + 19}" text-anchor="middle" font-size="12.5" fill="${C.mut}">${l}</text>`));
+  if (goal !== undefined) o.push(`<line x1="${Lp}" x2="${R}" y1="${y(goal)}" y2="${y(goal)}" stroke="${C.navy}" stroke-dasharray="7 5" stroke-width="2"/><text x="${Lp + 4}" y="${y(goal) - 5}" font-size="12" font-weight="800" fill="${C.navy}">Goal ${fmt(goal)}</text>`);
+  const used = [];
+  series.forEach(s => {
+    const pts = s.vals.map((v, i) => v === null ? null : [x(i), y(v)]).filter(Boolean);
+    o.push(`<polyline points="${pts.map(p => p.join(',')).join(' ')}" fill="none" stroke="${s.color}" stroke-width="3.5" stroke-linejoin="round"/>`);
+    const lp = last(pts); if (!lp) return; o.push(`<circle cx="${lp[0]}" cy="${lp[1]}" r="5" fill="${s.color}"/>`);
+    let ly = lp[1] + 5; while (used.some(u => Math.abs(u - ly) < 16)) ly += 16; used.push(ly);
+    o.push(`<text x="${R + 10}" y="${ly}" font-size="14" font-weight="800" fill="${s.color}">${esc(s.label)}</text>`);
+  });
+  return `<svg viewBox="0 0 ${W} ${H}">${o.join('')}</svg>`;
+}
+function soon(title, what, needs) {
+  return `<div class="soon"><div class="soonh">Coming next</div><h2>${esc(title)}</h2><p>${what}</p><p class="cs"><b>What it needs:</b> ${needs}</p><p class="cs">No numbers are shown here until a live data feed is connected.</p></div>`;
+}
+const section = (t, s) => `<div class="sect"><h2>${t}</h2>${s ? `<span>${s}</span>` : ''}</div>`;
+
+// ---------- derived numbers
+function D() {
+  const cm = curMonth(), cw = curWeek(), t = S.targets;
+  const weeks = S.rev_week.filter(r => r.week < cw).slice(-8), wkNow = S.rev_week.find(r => r.week === cw);
+  const lastWk = last(weeks);
+  const rpdGoal = kpi(1) || 21335;
+  const gmAll = gmByMonth().filter(g => g.month < cm), lastGm = last(gmAll), gmGoal = (kpi(3) || 45) / 100;
+  const depts = ['HVAC', 'Plumbing', 'Electrical'], gmMonths = [...new Set(S.gm_bu.filter(r => r.month < cm).map(r => r.month))].sort();
+  const gmDept = depts.map(d => ({d, vals:gmMonths.map(m => { const r = S.gm_bu.find(x => x.grp === d && x.month === m); return r && r.rev ? Math.round(r.gp / r.rev * 1000) / 10 : null; })}));
+  const csrDone = S.csr.filter(r => r.month < cm), lc = last(csrDone);
+  const callsDone = S.calls.filter(r => r.month < cm), lcall = last(callsDone);
+  const rec = S.recall.filter(r => r.month < cm), lrec = last(rec);
+  const tw30 = S.tech_window.find(r => r.window_days === 30) || {}, tw90 = S.tech_window.find(r => r.window_days === 90) || {};
+  const rv = S.reviews || {};
+  const fm = S.fuel_month.filter(r => r.month < cm), lf = last(fm), pf = fm[fm.length - 2];
+  return {cm, cw, t, weeks, wkNow, lastWk, rpdGoal, gmAll, lastGm, gmGoal, depts, gmMonths, gmDept, csrDone, lc, callsDone, lcall, rec, lrec, tw30, tw90, rv, fm, lf, pf, T:last(S.ttm), P:S.ttm[S.ttm.length - 2]};
+}
+
+// ---------- LOOK HERE (plain if-then rules on live data, worst first)
+function looks() {
+  const d = D(), out = [], t = d.t, T = d.T, need = S.needed[0];
+  const add = (st, h, txt, src, tab) => out.push({st, h, txt, src, tab});
+  if (T.ttm_ebitda < t.ttm_floor) add('r', `TTM EBITDA is ${usd(t.ttm_floor - T.ttm_ebitda)} below the floor`, `${usd(T.ttm_ebitda)} for the 12 months to ${mon(T.month, 1)}. Needs about ${usd(need.floor)} EBITDA (${usd(need.rev_floor)} revenue) a month to reach the floor by ${last(S.needed).month}.`, 'Finance / CFO Desk · ' + T.label, 'ov');
+  const base = S.cash13.filter(r => r.scenario === 'Base'), bmin = base.reduce((a, r) => r.ending_cash < a.ending_cash ? r : a, base[0]);
+  if (bmin && bmin.ending_cash < 0) add('r', `Cash forecast goes to ${usd(bmin.ending_cash)} the week of ${md(bmin.week_start)}`, '13-week forecast, base case. Plan for it now.', 'Finance / CFO Desk · ESTIMATE', 'ar');
+  d.gmDept.forEach(g => { const v = g.vals, a = last(v), b = v[v.length - 2]; if (a !== null && b !== null && (a < 20 || a < b - 10)) add('r', `${g.d} job margin fell to ${a.toFixed(0)}% in ${mon(last(d.gmMonths))}`, `Was ${b.toFixed(0)}% the month before. Company goal ${pct(d.gmGoal)}. Check pricing and labor on ${g.d.toLowerCase()} jobs.`, 'Pricebook & Pay · ST 2469 · FACT', 'ov'); });
+  if (d.lastWk && d.lastWk.rev / 5 < d.rpdGoal * .9) add('y', `Revenue per day ${usd(d.lastWk.rev / 5)} last week`, `Goal ${usd(d.rpdGoal)} (under review). Week of ${md(d.lastWk.week)}: ${usd(d.lastWk.rev)} job revenue on ${d.lastWk.jobs} jobs.`, 'Finance / CFO Desk · ST 2469', 'ov');
+  if (S.over60.amt > 30000) add('y', `${usd(S.over60.amt)} of AR is over 60 days`, `${S.over60.customers} customers. No company target yet (idea: under $30K).${S.over60.no_owner ? ` ${S.over60.no_owner} have no owner (${usd(S.over60.no_owner_amt)}).` : ''}`, 'Finance / CFO Desk · ST 385', 'ar');
+  if (S.unsent.ready_n > 0) add('y', `${S.unsent.ready_n} finished jobs not invoiced by email (${usd(S.unsent.ready_amt)})`, `${S.unsent.ready_noemail} have no email on file. ${S.unsent.held_n} more are on hold on purpose.`, 'Chief of Staff · ST 2427', 'un');
+  const pv = PR(), top = (pv.open || []).slice(0, pv.visible || 7), nok = top.filter(r => r.needs_ok && !r.held);
+  if (nok.length) add('r', `${nok.length} of your top priorities need your OK`, nok.map(r => r.title).join(' · '), 'Priorities list', 'act');
+  const pdue = top.filter(r => r.due_on && daysOld(r.due_on) >= -3);
+  pdue.forEach(r => add(daysOld(r.due_on) > 0 ? 'r' : 'y', `${r.title}: due ${new Date(r.due_on + 'T12:00:00').toLocaleDateString('en-US', {weekday:'short', month:'numeric', day:'numeric'})}`, r.next_step || '', r.owner_bot, 'act'));
+  if (d.tw30.close_rate && d.tw30.close_rate < (kpi(10) || 35) / 100) add('y', `Estimate close rate ${pct(d.tw30.close_rate)} (30 days)`, `Goal ${kpi(10) || 35}%. 90-day rate ${pct(d.tw90.close_rate || 0)}. ${S.est_age[1].n} open estimates are 8–30 days old (${usd(S.est_age[1].amt)}).`, 'Ops / Dispatch · ST 325', 'est');
+  if (S.est_nosales.length) add('y', `${S.est_nosales.length} big open estimates have no salesperson`, `Biggest ${usd(S.est_nosales[0].subtotal)}. Assign a Sold By.`, 'Ops / Dispatch', 'est');
+  if (d.lcall && d.lcall.abandoned / d.lcall.calls > .15) add('y', `${pct(d.lcall.abandoned / d.lcall.calls)} of calls abandoned in ${mon(d.lcall.month)}`, `${d.lcall.abandoned} of ${d.lcall.calls} inbound calls. Check phone routing / after-hours answering before reading it as lost demand.`, 'Ops / Dispatch · ST 2246', 'mk');
+  if (d.rv.w30 && d.rv.w30.unanswered > 0) add('y', `${d.rv.w30.unanswered} Google reviews in 30 days have no reply`, `Average rating ${d.rv.w30.avg}★ over 30 days (goal ${kpi(17) || 4.7}★).`, 'Brand · Birdeye', 'mk');
+  if (d.rv.w7 && d.rv.w7.low > 0) add('y', `${d.rv.w7.low} low rating${d.rv.w7.low > 1 ? 's' : ''} (3★ or less) this week`, 'Call the customer and reply on Google.', 'Brand · Birdeye', 'mk');
+  if (d.lf && d.pf && d.lf.fuel_usd > d.pf.fuel_usd * 1.25) add('y', `Fuel spend up ${pct(d.lf.fuel_usd / d.pf.fuel_usd - 1)} in ${mon(d.lf.month)}`, `${usd(d.lf.fuel_usd)} vs ${usd(d.pf.fuel_usd)} the month before.`, 'Fleet · fuel card', 'fl');
+  S.bots.filter(b => b.status === 'STALE').forEach(b => add('y', `${b.bot} feed is late`, b.detail || '', 'Bot feeds', 'ov'));
+  return out.sort((x, y) => (x.st === 'r' ? 0 : 1) - (y.st === 'r' ? 0 : 1));
+}
+function lookBox() {
+  const ls = looks();
+  return `<div class="lookbox"><div class="lookhead"><div class="eye">!</div><div><h2>LOOK HERE: bad trends</h2><span>Simple rules on live data, worst first. Tap one to open its tab.</span></div></div>
+  ${ls.length ? ls.map(l => `<a class="look" href="#${l.tab}" data-go="${l.tab}" style="border-left-color:${COL[l.st]}"><div class="lic" style="background:${COL[l.st]}">${l.st === 'r' ? '!' : '?'}</div><div class="ltxt"><b>${esc(l.h)}</b><span>${esc(l.txt)}</span><i>Source: ${esc(l.src)}</i></div></a>`).join('') : '<div class="cs">Nothing flagged right now.</div>'}</div>`;
+}
+function botBox() {
+  return `<div class="feeds"><h3>Bot feeds: last update</h3><div class="fgrid">${S.bots.map(b => {
+    const c = b.status === 'OK' ? C.green : b.status === 'NOT LIVE' ? C.gray : b.status === 'STALE' ? C.amber : C.red;
+    const tt = b.status === 'NOT LIVE' ? 'not live' : (b.status === 'OK' ? '' : b.status.toLowerCase() + ' · ') + ct(b.last_update);
+    return `<div class="feed" title="${esc(b.detail || b.note || '')}"><span class="dot" style="background:${c}"></span><b>${esc(b.bot)}</b><span class="ft">${esc(tt)}</span></div>`; }).join('')}</div>
+  <div class="cs" style="margin-top:8px">Time = last load of each bot's main feed (e.g. the action list for Chief of Staff). Dot turns yellow if any feed it owns is late. Hover for detail.</div></div>`;
+}
+const right = () => `<div class="right"><div class="desk">${lookBox()}</div>${botBox()}</div>`;
+const mobLook = () => `<div class="mob">${lookBox()}</div>`;
+
+// ---------- Overview
+function pageOv() {
+  const d = D(), t = d.t, T = d.T, P = d.P, tt = S.ttm.slice(-13), need = S.needed[0], R = last(S.rev_ttm);
+  const rpd = d.lastWk ? d.lastWk.rev / 5 : null;
+  const csrRate = d.lc ? d.lc.booked / d.lc.lead_calls : null, bookGoal = (kpi(9) || 40) / 100;
+  const ftf = d.lrec ? 1 - d.lrec.recalls / d.lrec.jobs : null, ftfGoal = (kpi(11) || 85) / 100;
+  const rv = d.rv, rvGoal = kpi(17) || 4.7;
+  const tiles = [
+    tile({title:'Revenue per day', val:rpd ? usd(rpd) : '–', st:!rpd ? 'n' : rpd >= d.rpdGoal ? 'g' : rpd >= d.rpdGoal * .9 ? 'y' : 'r', label:'FACT', feed:'dash_job_costing', asof:d.lastWk && d.lastWk.as_of,
+      sub:`Goal ${usd(d.rpdGoal)} · ${rpd ? pct(rpd / d.rpdGoal) : '–'} of plan · last full week ÷ 5 workdays`, src:'ST 2469 job revenue', spark:d.weeks.map(w => w.rev / 5), goal:d.rpdGoal}),
+    tile({title:'Gross margin %', val:d.lastGm ? pct(d.lastGm.gm, 1) : '–', st:!d.lastGm ? 'n' : d.lastGm.gm >= d.gmGoal ? 'g' : d.lastGm.gm >= d.gmGoal - .05 ? 'y' : 'r', label:'FACT', feed:'dash_job_costing', asof:d.lastGm && d.lastGm.as_of,
+      sub:`Goal ${pct(d.gmGoal)} (under review) · job margin, ${d.lastGm ? mon(d.lastGm.month) : ''} · ${d.lastGm ? d.lastGm.jobs : 0} jobs`, src:'ST 2469', spark:d.gmAll.map(g => g.gm * 100), goal:d.gmGoal * 100}),
+    tile({title:'AR over 60 days', val:usd(S.over60.amt), st:S.over60.amt > 30000 ? 'r' : 'g', label:'FACT', feed:'dash_ar_aging', asof:S.over60.as_of,
+      sub:`No target set yet (idea: under $30K) · ${S.over60.customers} customers`, src:'ST 385'}),
+    tile({title:'Unsent invoices', val:usd(S.unsent.ready_amt), st:S.unsent.ready_n ? (S.unsent.ready_amt > 5000 ? 'r' : 'y') : 'g', label:'FACT', feed:'dash_unsent', asof:S.unsent.as_of,
+      sub:`Goal $0 by end of day · ${S.unsent.ready_n} to send · ${S.unsent.held_n} on hold`, src:'ST 2427'}),
+    tile({title:'Estimate close rate', val:d.tw30.close_rate != null ? pct(d.tw30.close_rate) : '–', st:d.tw30.close_rate == null ? 'n' : d.tw30.close_rate >= (kpi(10) || 35) / 100 ? 'g' : d.tw30.close_rate >= (kpi(10) || 35) / 100 - .05 ? 'y' : 'r', label:'FACT', feed:'dash_sales', asof:d.tw30.as_of,
+      sub:`Goal ${kpi(10) || 35}% · last 30 days · ${d.tw30.opps || 0} opportunities · 90-day ${d.tw90.close_rate != null ? pct(d.tw90.close_rate) : '–'}`, src:'ST 325 by technician'}),
+    tile({title:'Call booking %', val:csrRate != null ? pct(csrRate) : '–', st:csrRate == null ? 'n' : csrRate >= bookGoal ? 'g' : csrRate >= bookGoal - .05 ? 'y' : 'r', label:'FACT', feed:'dash_marketing', asof:d.lc && d.lc.as_of,
+      sub:`Goal ${pct(bookGoal)} (stretch 45%) · ${d.lc ? mon(d.lc.month) + ': ' + d.lc.booked + ' of ' + d.lc.lead_calls + ' lead calls' : ''}`, src:'ST 2409 CSR report', spark:d.csrDone.slice(-7).map(r => r.lead_calls ? r.booked / r.lead_calls * 100 : null), goal:bookGoal * 100}),
+    tile({title:'First-time fix rate', val:ftf != null ? pct(ftf, 1) : '–', st:ftf == null ? 'n' : ftf >= ftfGoal ? 'g' : 'y', label:'ESTIMATE', feed:'dash_job_costing', asof:d.lrec && d.lrec.as_of,
+      sub:`Goal ${pct(ftfGoal)} · ${d.lrec ? d.lrec.recalls + ' recalls of ' + d.lrec.jobs + ' jobs in ' + mon(d.lrec.month) : ''} · 100% − recall-flagged jobs`, src:'ST 2469 recall flag', spark:d.rec.map(r => (1 - r.recalls / r.jobs) * 100), goal:ftfGoal * 100}),
+    tile({title:'New reviews (week)', val:rv.w7 ? String(rv.w7.n) : '–', st:!rv.w7 ? 'n' : (rv.w7.avg || 0) >= rvGoal ? 'g' : 'y', label:'FACT', feed:'birdeye_sync', asof:rv.as_of,
+      sub:`Google, last 7 days · ${rv.w7 && rv.w7.avg ? rv.w7.avg + '★' : '–'} avg · goal ${rvGoal}★ · 30-day ${rv.w30 && rv.w30.avg ? rv.w30.avg + '★' : '–'}`, src:'Birdeye', spark:(rv.weekly || []).map(w => w.n)}),
+  ];
+  const wk = d.weeks.concat(d.wkNow ? [d.wkNow] : []), goalWk = d.rpdGoal * 5;
+  const c1 = barChart({labels:wk.map(w => md(w.week)), vals:wk.map(w => w.rev), colors:wk.map(w => w.week === d.cw ? C.gray : w.rev >= goalWk ? C.teal : C.red), goal:goalWk, goalLabel:'Goal ' + usdK(goalWk) + '/wk'});
+  const c2 = multiLine({labels:d.gmMonths.map(m => mon(m)), series:d.gmDept.map((g, i) => ({vals:g.vals, color:[C.teal, C.red, C.amber][i], label:`${g.d} ${last(g.vals) !== null ? last(g.vals).toFixed(0) + '%' : ''}`})), goal:d.gmGoal * 100});
+  // profit goals section
+  const st = v => v >= t.ttm_goal ? 'g' : v >= t.ttm_floor ? 'y' : 'r';
+  const pt = [
+    tile({title:'TTM EBITDA vs. profit goals', val:usd(T.ttm_ebitda), st:st(T.ttm_ebitda), label:T.label, feed:'dash_pl_qbo', asof:T.as_of,
+      sub:`Floor ${usd(t.ttm_floor)} · goal ${usd(t.ttm_goal)} · stretch ${usd(t.ttm_stretch)}<br><b>${usd(t.ttm_floor - T.ttm_ebitda)} to the floor</b> · ${mon(S.ttm[S.ttm.length - 12].month, 1)}–${mon(T.month, 1)}`,
+      src:T.est_months ? `${12 - T.est_months} mo QBO closed + ${T.est_months} mo estimate` : '12 mo QBO closed', spark:tt.map(r => r.ttm_ebitda)}),
+    tile({title:'TTM Adjusted EBITDA', val:usd(T.ttm_adj_ebitda), st:st(T.ttm_adj_ebitda), label:'ESTIMATE', feed:'dash_pl_qbo', asof:S.adjust.as_of,
+      sub:`Adjustments ${usd(S.adjust.total, 1)} · ${S.adjust.confirmed} confirmed, ${S.adjust.proposed} proposed`, src:'EBITDA + adjustments table', spark:tt.map(r => r.ttm_adj_ebitda)}),
+    tile({title:'EBITDA needed per month', val:usd(need.floor), st:T.month_ebitda >= need.floor ? 'g' : 'r', label:'ESTIMATE', feed:'dash_pl_qbo', asof:T.as_of,
+      sub:`To reach the floor by ${last(S.needed).month} · ${mon(T.month)} was ${usd(T.month_ebitda)} · ≈${usd(need.rev_floor)} revenue/mo`, src:'Targets table'}),
+    tile({title:'TTM revenue', val:usd(R.ttm), st:R.ttm >= S.rev_ttm[S.rev_ttm.length - 2].ttm ? 'g' : 'y', label:'FACT', feed:'dash_revenue', asof:R.as_of,
+      sub:`a year ago ${usd(S.rev_ttm[0].ttm)} · ties to ServiceTitan ${S.recon.passed ? '✓' : '✗'}`, src:'ST 334', spark:S.rev_ttm.map(r => r.ttm)}),
+  ];
+  const estIdx = tt.findIndex(r => r.label === 'ESTIMATE');
+  const p1 = lineChart({labels:tt.map(r => mon(r.month)), estFrom:estIdx < 0 ? 1e9 : estIdx,
+    series:[{vals:tt.map(r => r.ttm_adj_ebitda), color:C.amber, width:2.5, dash:'5 4', label:'Adj.', dy:-6}, {vals:tt.map(r => r.ttm_ebitda), color:C.red, label:usdK(T.ttm_ebitda), dy:12}],
+    hlines:[{v:t.ttm_stretch, label:'Stretch ' + usdM(t.ttm_stretch), color:C.green}, {v:t.ttm_goal, label:'Goal ' + usdM(t.ttm_goal), color:C.teal}, {v:t.ttm_floor, label:'Floor ' + usdM(t.ttm_floor), color:C.navy}]});
+  const em = S.ebitda_monthly.slice(-12), lyOf = m => { const r = S.ebitda_monthly.find(x => x.month === (Number(m.slice(0, 4)) - 1) + m.slice(4)); return r ? r.ebitda : null; };
+  const p2 = barChart({labels:em.map(r => mon(r.month)), vals:em.map(r => r.ebitda), ly:em.map(r => lyOf(r.month)), colors:em.map(r => r.ebitda >= (lyOf(r.month) ?? -1e12) ? C.teal : C.red), est:em.map(r => r.label === 'ESTIMATE')});
+  const tbl = table([{h:'Month', f:r => `<b>${esc(r.month.slice(0, 3) + ' ' + r.month.slice(-2))}</b>`}, {h:'Beat LY EBITDA ' + L('FACT'), n:1, f:r => usd(r.ly_ebitda)}, {h:'Floor/mo ' + L('ESTIMATE'), n:1, f:r => usd(r.floor)}, {h:'Goal/mo', n:1, hs:1, f:r => usd(r.goal)}, {h:'Revenue/mo for floor', n:1, f:r => usd(r.rev_floor)}, {h:'LY revenue', n:1, f:r => usd(r.ly_rev)}, {h:'MTD', n:1, f:r => r.rev_mtd ? usd(r.rev_mtd) : ''}], S.needed);
+  return `<div class="cols"><div class="left"><div class="grid">${tiles.join('')}</div>${mobLook()}
+   <div class="charts">
+    ${chartBox('Revenue by week vs goal', `Job revenue by invoice week · dashed = goal ${usdK(goalWk)}/week (${usd(d.rpdGoal)}/day × 5) · gray = this week so far · ${L('FACT')} ST 2469`, c1)}
+    ${chartBox('Gross margin by department', `Job margin by month (complete months) · ${L('FACT')} ST 2469 job types · ${esc(ct(d.lastGm && d.lastGm.as_of))}`, c2)}
+    ${chartBox('Money owed to us, by owner', `Open AR by collections owner and age · ${L('FACT')} ST 385 · ${esc(ct(S.ar.as_of))}`, stackOwner())}
+   </div>
+   ${section('Profit goals', 'Trailing-12-month EBITDA against the floor, goal and stretch. QBO closed months are FACT; later months are ESTIMATES until the books close.')}
+   <div class="grid">${pt.join('')}</div>
+   <div class="charts two">
+    ${chartBox('TTM EBITDA vs. profit goals', 'Solid red = EBITDA, dashed amber = adjusted. Hollow dot = includes an estimate month.', p1)}
+    ${chartBox('EBITDA by month vs last year', 'Gray = same month last year. Teal = beat last year. Hatched = estimate.', p2, legend([[C.teal, 'beat LY'], [C.red, 'below LY'], ['', 'estimate', 1], ['#dfe7e9', 'last year']]))}
+   </div>
+   <div class="chart"><h3>What each month needs (to ${esc(last(S.needed).month)})</h3><div class="cs">To keep TTM rising, beat last year's month. To reach the floor, hit the floor column.</div>${tbl}
+    <div class="cs" style="margin-top:8px">Revenue check: TTM ${usd(S.recon.dash_total)} = ServiceTitan ${usd(S.recon.reference_total)} (diff $${Number(S.recon.diff).toFixed(2)}) · ${S.recon.passed ? '✅ PASS' : '❌ CHECK'} · ${esc(ct(S.recon.run_at))}</div></div>
+  </div>${right()}</div>`;
+}
+
+// ---------- Collections / AR
+function pageAR() {
+  const ar = S.ar, o60 = S.over60;
+  const base = S.cash13.filter(r => r.scenario === 'Base'), low = S.cash13.filter(r => r.scenario === 'Low');
+  const bmin = base.reduce((a, r) => r.ending_cash < a.ending_cash ? r : a, base[0]), lmin = low.reduce((a, r) => r.ending_cash < a.ending_cash ? r : a, low[0]);
+  const bk = last(S.bank), b90 = S.ar_buckets.find(b => b.bucket === '90+') || {amt:0};
+  const tiles = [
+    tile({title:'Total open AR', val:usd(ar.open_ar), st:'n', label:'FACT', feed:'dash_ar_aging', asof:ar.as_of, sub:`${ar.n} open items · ties to ST 385 ${S.ar_recon.passed ? '✓' : '✗'}`, src:'ST 385'}),
+    tile({title:'AR over 60 days', val:usd(o60.amt), st:o60.amt > 30000 ? 'r' : 'g', label:'FACT', feed:'dash_ar_aging', asof:o60.as_of, sub:`${o60.customers} customers · no target yet (idea: under $30K)`, src:'ST 385'}),
+    tile({title:'Over 90 days', val:usd(b90.amt), st:b90.amt > 20000 ? 'r' : 'y', label:'FACT', feed:'dash_ar_aging', asof:ar.as_of, sub:'Oldest money; most at risk', src:'ST 385'}),
+    tile({title:'60+ days with no owner', val:usd(o60.no_owner_amt || 0), st:o60.no_owner ? 'y' : 'g', label:'FACT', feed:'dash_ar_aging', asof:o60.as_of, sub:`${o60.no_owner} customers · assign an owner`, src:'AR rules'}),
+    tile({title:'Cash low point (13 weeks)', val:usd(bmin.ending_cash), st:bmin.ending_cash < 0 ? 'r' : bmin.ending_cash < bmin.min_cash_target ? 'y' : 'g', label:'ESTIMATE', feed:'dash_cash13', asof:bmin.file_mtime, sub:`Base case, week of ${md(bmin.week_start)} · low case ${usd(lmin.ending_cash)}`, src:'CFO Desk forecast', spark:base.map(r => r.ending_cash), goal:0}),
+    tile({title:`Bank: ${bk ? mon(bk.month) : ''} net`, val:bk ? usd(bk.inflow - bk.outflow) : '–', st:bk && bk.inflow >= bk.outflow ? 'g' : 'r', label:'FACT', feed:'dash_cash13', asof:bk && bk.as_of, sub:bk ? `In ${usd(bk.inflow)} (excl. owner money) · out ${usd(bk.outflow)}` : '', src:'Bank history', spark:S.bank.map(r => r.inflow - r.outflow), goal:0}),
+  ];
+  const c1 = barChart({labels:S.ar_buckets.map(b => b.bucket + ' d'), vals:S.ar_buckets.map(b => b.amt), colors:[C.teal, C.amber, C.red, C.red]});
+  const c3 = lineChart({labels:base.map(r => md(r.week_start)), series:[{vals:low.map(r => r.ending_cash), color:C.red, width:2.5, dash:'5 4', label:'Low'}, {vals:base.map(r => r.ending_cash), color:C.navy, label:'Base'}], hlines:[{v:base[0].min_cash_target, label:'Min ' + usd(base[0].min_cash_target), color:C.amber}]});
+  const t60 = table([{h:'Customer', f:r => `${esc(r.customer)}<div class="mini">${esc(r.next_action || '')}</div>`}, {h:'60+ days', n:1, f:r => `<b>${usd(r.over_60)}</b>`}, {h:'Open', n:1, f:r => usd(r.open_total)}, {h:'Owner', f:r => esc(r.owner)}], S.top60);
+  return `<div class="cols"><div class="left"><div class="grid g3">${tiles.join('')}</div>${mobLook()}
+   <div class="charts">
+    ${chartBox('Open AR by age', `Days past due, net of credits · ${L('FACT')} ST 385 · ${esc(ct(ar.as_of))}`, c1)}
+    ${chartBox('Money owed to us, by owner', `By collections owner and age · ${L('FACT')}`, stackOwner())}
+    ${chartBox('13-week cash: base vs low case', `Ending cash by week · ${L('ESTIMATE')} CFO Desk forecast · file ${esc(ct(base[0].file_mtime))}`, c3)}
+   </div>
+   ${chartBox('Biggest AR over 60 days', `Top customers with the next step · ${L('FACT')}`, t60)}
+  </div>${right()}</div>`;
+}
+
+// ---------- Unsent invoices
+function pageUnsent() {
+  const u = S.unsent, ready = S.unsent_list.filter(r => !r.hold);
+  const oldest = ready.reduce((a, r) => r.completed_date && (!a || r.completed_date < a) ? r.completed_date : a, null);
+  const tiles = [
+    tile({title:'Ready to send', val:usd(u.ready_amt), st:u.ready_n ? (u.ready_amt > 5000 ? 'r' : 'y') : 'g', label:'FACT', feed:'dash_unsent', asof:u.as_of, sub:`${u.ready_n} invoices · goal $0 by end of day`, src:'ST 2427'}),
+    tile({title:'No email on file', val:String(u.ready_noemail), st:u.ready_noemail ? 'y' : 'g', label:'FACT', feed:'dash_unsent', asof:u.as_of, sub:'Get an email or mail/text the invoice', src:'ST 2427'}),
+    tile({title:'Oldest unsent', val:oldest ? daysOld(oldest) + ' days' : '–', st:!oldest ? 'g' : daysOld(oldest) > 3 ? 'y' : 'g', label:'FACT', feed:'dash_unsent', asof:u.as_of, sub:oldest ? `Job finished ${md(oldest)}` : 'Nothing waiting', src:'ST 2427'}),
+    tile({title:'On hold on purpose', val:usd(u.held_amt), st:'n', label:'FACT', feed:'dash_invoice_holds', asof:u.as_of, sub:`${u.held_n} invoices on the hold list`, src:'Hold list + ST 2427'}),
+  ];
+  const c1 = barChart({labels:S.unsent_age.map(b => b.bucket), vals:S.unsent_age.map(b => b.amt), colors:[C.teal, C.amber, C.red, C.red]});
+  const tr = table([{h:'Invoice', f:r => esc(r.invoice)}, {h:'Customer', f:r => esc(r.customer) + (r.has_email ? '' : ' <span class="warnt">no email</span>')}, {h:'Finished', f:r => r.completed_date ? md(r.completed_date) : ''}, {h:'Balance', n:1, f:r => usd(r.amount)}, {h:'Do', f:() => `<span class="pill" style="background:${C.green}">SEND</span>`}], ready, '✅ Nothing waiting to be sent.');
+  const th = table([{h:'Invoice', f:r => esc(r.invoice)}, {h:'Customer', f:r => esc(r.customer)}, {h:'Balance', n:1, f:r => usd(r.balance)}, {h:'Why held', f:r => `<span class="mini">${esc(r.reason || '')}</span>`}], S.held_list);
+  const tt = table([{h:'Technician', f:r => esc(r.tech)}, {h:'Invoices', n:1, f:r => r.n}, {h:'Amount', n:1, f:r => usd(r.amt)}], S.unsent_tech, 'None.');
+  return `<div class="cols"><div class="left"><div class="grid">${tiles.join('')}</div>${mobLook()}
+   <div class="charts two">
+    ${chartBox('Send these now', `Finished jobs with a balance, not emailed · ${L('FACT')} ST 2427 · ${esc(ct(u.as_of))}`, tr)}
+    ${chartBox('Ready to send, by age', `Days since the job finished · ${L('FACT')}`, c1)}
+   </div>
+   <div class="charts two">
+    ${chartBox('On hold (do not send yet)', `From the hold list, biggest first · ${L('FACT')} · ${esc(ct(S.held_list[0] && S.held_list[0].synced_at))}`, th)}
+    ${chartBox('Ready to send, by technician', `Who finished the job · ${L('FACT')}`, tt)}
+   </div>
+  </div>${right()}</div>`;
+}
+
+// ---------- Estimates & sales
+function pageEst() {
+  const d = D(), e = S.est_sum, tw = d.tw30, bw = S.booked_weekly.filter(r => r.week < d.cw), lbw = last(bw);
+  const mm = S.memb_monthly.filter(r => r.month < d.cm), lmm = last(mm), am = S.metrics.active_memberships;
+  const crGoal = (kpi(10) || 35) / 100;
+  const tiles = [
+    tile({title:'Close rate (30 days)', val:tw.close_rate != null ? pct(tw.close_rate) : '–', st:tw.close_rate == null ? 'n' : tw.close_rate >= crGoal ? 'g' : tw.close_rate >= crGoal - .05 ? 'y' : 'r', label:'FACT', feed:'dash_sales', asof:tw.as_of, sub:`Goal ${pct(crGoal)} · 90-day ${d.tw90.close_rate != null ? pct(d.tw90.close_rate) : '–'} · ${tw.opps} opportunities`, src:'ST 325'}),
+    tile({title:'Sold (30 days)', val:usd(tw.sales), st:'n', label:'FACT', feed:'dash_sales', asof:tw.as_of, sub:`${md(tw.pf)}–${md(tw.pt)} · 90 days ${usd(d.tw90.sales)}`, src:'ST 325'}),
+    tile({title:'Open estimates (≤90 days)', val:usd(e.amt90), st:'n', label:'FACT', feed:'dash_sales', asof:e.as_of, sub:`${e.n90} estimates · ${S.est_age[0].n} new this week`, src:'ST estimates'}),
+    tile({title:'Follow up now (8–30 days)', val:usd(S.est_age[1].amt), st:S.est_age[1].n > 100 ? 'y' : 'n', label:'FACT', feed:'dash_sales', asof:e.as_of, sub:`${S.est_age[1].n} open estimates in the follow-up window`, src:'ST estimates'}),
+    tile({title:'Jobs booked last week', val:lbw ? String(lbw.booked) : '–', st:'n', label:'FACT', feed:'dash_sales', asof:lbw && lbw.as_of, sub:lbw ? `Week of ${md(lbw.week)} · ${lbw.canceled} canceled` : '', src:'ST jobs', spark:bw.map(r => r.booked)}),
+    tile({title:'Active memberships', val:am ? Math.round(am.value).toLocaleString() : '–', st:'n', label:'FACT', feed:'dash_sales', asof:am && am.as_of, sub:lmm ? `${lmm.conv} sold in ${mon(lmm.month)}` : '', src:'ST memberships', spark:mm.slice(-8).map(r => r.conv)}),
+  ];
+  const c1 = barChart({labels:S.est_age.map(b => b.bucket + ' d'), vals:S.est_age.map(b => b.amt), colors:[C.teal, C.amber, C.red, C.gray]});
+  const c2 = barChart({labels:bw.map(r => md(r.week)), vals:bw.map(r => r.booked), colors:bw.map(() => C.teal), fmt:v => String(Math.round(v))});
+  const ts = table([{h:'Technician', f:r => esc(r.technician)}, {h:'Sold', n:1, f:r => usd(r.total_sales)}, {h:'Close', n:1, f:r => r.close_rate != null ? `<b style="color:${r.close_rate >= crGoal ? C.green : C.red}">${pct(r.close_rate)}</b>` : '–'}, {h:'Opps', n:1, hs:1, f:r => r.sales_opportunities}, {h:'Avg sale', n:1, f:r => usd(r.closed_avg_sale)}], S.tech_sales);
+  const fu = table([{h:'Estimate', f:r => `${esc(r.name)}<div class="mini">${esc(r.business_unit || '')}</div>`}, {h:'Amount', n:1, f:r => `<b>${usd(r.subtotal)}</b>`}, {h:'Age', n:1, f:r => r.age + ' d'}, {h:'Sold by', f:r => esc(r.sold_by)}], S.est_follow);
+  return `<div class="cols"><div class="left"><div class="grid g3">${tiles.join('')}</div>${mobLook()}
+   <div class="charts two">
+    ${chartBox('Open estimates by age', `Dollar value of open estimates · ${L('FACT')} ST · ${esc(ct(e.as_of))}`, c1)}
+    ${chartBox('Jobs booked by week', `All departments · ${L('FACT')} ST jobs`, c2)}
+   </div>
+   <div class="charts two">
+    ${chartBox('Technician sales, last 30 days', `Close rate vs goal ${pct(crGoal)} · ${L('FACT')} ST 325`, ts)}
+    ${chartBox('Biggest estimates to follow up', `Open 3–30 days, biggest first · ${L('FACT')}`, fu)}
+   </div>
+  </div>${right()}</div>`;
+}
+
+// ---------- Action tracker = Stephen's Priorities list (ops.priorities). ~7 cards, the rest folded under Backlog (N).
+const PR = () => S.priorities || {open:[], closed:[], visible:7};
+let prioBusy = false, addOpen = false;
+function prioCard(r, i, n, compact) {
+  const ok = r.needs_ok ? `<span class="badge red">NEEDS YOUR OK${r.ok_count ? ' (' + r.ok_count + ')' : ''}</span>` : '';
+  const held = r.held ? '<span class="badge gray">ON HOLD</span>' : '';
+  const due = r.due_on ? `<span class="badge ${daysOld(r.due_on) > 0 ? 'red' : 'amber'}">DUE ${esc(new Date(r.due_on + 'T12:00:00').toLocaleDateString('en-US', {weekday:'short', month:'numeric', day:'numeric'}))}</span>` : '';
+  const btn = (a, label, title, dis) => `<button class="pb pb-${a}" data-pa="${a}" data-id="${r.id}" title="${title}" aria-label="${title}"${dis ? ' disabled' : ''}>${label}</button>`;
+  return `<div class="pcard${compact ? ' compact' : ''}${r.held ? ' held' : ''}" data-id="${r.id}">
+   <div class="prank">${i + 1}</div>
+   <div class="pbody"><div class="ptitle">${esc(r.title)} ${ok}${held}${due}</div>
+    ${r.next_step ? `<div class="pnext"><b>Next:</b> ${esc(r.next_step)}</div>` : ''}
+    <div class="pmeta">Owner: <b>${esc(r.owner_bot)}</b> · updated ${esc(ct(r.updated_at))}${r.updated_by && r.updated_by !== 'seed' ? ' by ' + esc(r.updated_by) : ''}</div>
+    <div class="pctl">${btn('up', '▲', 'Move up', i === 0)}${btn('down', '▼', 'Move down', i === n - 1)}${btn('done', '✓ Done', 'Mark done')}${btn('drop', '✕ Drop', 'Drop')}</div>
+   </div></div>`;
+}
+function pageAct() {
+  const P = PR(), open = P.open || [], vis = P.visible || 7, top = open.slice(0, vis), back = open.slice(vis);
+  const needOk = open.filter(r => r.needs_ok && !r.held), a = S.actions_sum || {};
+  const owners = ['Chief of Staff', 'Finance / CFO Desk', 'Ops / Dispatch', 'Pricebook & Pay', 'SEO & AEO', 'Brand', 'Fleet', 'Payroll', 'Warranty', 'Dashboard build'];
+  const addForm = addOpen ? `<form class="padd" id="padd"><input name="title" maxlength="300" placeholder="What needs to happen?" required>
+     <input name="next" maxlength="500" placeholder="Next step (optional)">
+     <div class="paddrow"><select name="owner">${owners.map(o => `<option>${esc(o)}</option>`).join('')}</select>
+     <label><input type="checkbox" name="needs_ok"> Needs my OK</label></div>
+     <div class="paddrow"><button type="submit" class="pb pb-save">Add to my list</button><button type="button" class="pb" data-pa="cancel-add">Cancel</button></div></form>`
+    : `<button class="pb pb-add" data-pa="open-add">＋ Add a priority</button>`;
+  const old = (S.actions || []).slice(0, 25);
+  return `<div class="cols"><div class="left">
+   <div class="chart"><h3>My priorities</h3><div class="cs">Top ${vis} only. Use ▲ ▼ to reorder; moving a backlog item up past #${vis} brings it onto this list. ${needOk.length ? `<b style="color:${C.red}">${needOk.length} need your OK.</b>` : ''} Saved for everyone right away · ${L('FACT')} list updated ${esc(ct(P.as_of))}</div>
+    <div id="pmsg" class="pmsg"></div>
+    ${top.map((r, i) => prioCard(r, i, open.length)).join('') || '<div class="cs">Nothing on the list.</div>'}
+    ${addForm}
+   </div>
+   <details class="fold"><summary>Backlog (${back.length})</summary><div class="cs">Build projects and later items, in order. Move one up to promote it.</div>
+    ${back.map((r, i) => prioCard(r, i + vis, open.length, 1)).join('')}</details>
+   <details class="fold"><summary>Done or dropped recently (${(P.closed || []).length})</summary>
+    ${(P.closed || []).map(r => `<div class="act"><div><b>${esc(r.title)}</b><div class="mini">${esc(r.status)} ${esc(ct(r.closed_at))}${r.updated_by && r.updated_by !== 'seed' ? ' by ' + esc(r.updated_by) : ''}</div></div><div class="actd"><button class="pb" data-pa="restore" data-id="${r.id}">↺ Restore</button></div></div>`).join('') || '<div class="cs">None yet.</div>'}</details>
+   <details class="fold"><summary>Old meeting-notes action list (${a.n || 0} items, read-only)</summary>
+    <div class="cs">Auto-collected from meeting notes (Fieldy + Fireflies) by the Chief of Staff bot; ${a.overdue || 0} have past dates. Kept for reference only, not a to-do list. Showing the first ${old.length}. Updated ${esc(ct(a.as_of))}.</div>
+    ${old.map(r => `<div class="act"><div>${esc(r.title)}<div class="mini">${esc(r.source || '')}${r.due_at ? ' · due ' + md(r.due_at.slice(0, 10)) : ''}</div></div></div>`).join('')}</details>
+  </div>${right()}</div>`;
+}
+async function prioDo(action, body) {
+  if (prioBusy) return; prioBusy = true;
+  const msg = document.getElementById('pmsg'); if (msg) { msg.textContent = 'Saving…'; msg.className = 'pmsg on'; }
+  try {
+    S.priorities = await API.prio(action, body || {});
+    if (action === 'add') addOpen = false;
+    render();
+    const m2 = document.getElementById('pmsg'); if (m2) { m2.textContent = 'Saved ✓'; m2.className = 'pmsg on ok'; setTimeout(() => { m2.className = 'pmsg'; }, 1800); }
+  } catch (e) {
+    const m2 = document.getElementById('pmsg'); if (m2) { m2.textContent = 'Not saved: ' + e.message; m2.className = 'pmsg on bad'; }
+  } finally { prioBusy = false; }
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-pa]'); if (!b) return;
+  const a = b.dataset.pa, id = b.dataset.id;
+  if (a === 'open-add') { addOpen = true; renderPage('act'); const f = document.querySelector('#padd input'); if (f) f.focus(); return; }
+  if (a === 'cancel-add') { addOpen = false; renderPage('act'); return; }
+  if (a === 'drop') { const r = PR().open.find(x => String(x.id) === id); if (!confirm('Drop "' + (r ? r.title : 'this item') + '"? You can restore it later.')) return; }
+  prioDo(a, {id});
+});
+document.addEventListener('submit', e => {
+  if (e.target.id !== 'padd') return; e.preventDefault();
+  const f = new FormData(e.target);
+  prioDo('add', {title:f.get('title'), next:f.get('next'), owner:f.get('owner'), needs_ok:!!f.get('needs_ok')});
+});
+
+// ---------- Marketing & reviews
+function pageMk() {
+  const d = D(), rv = d.rv, lc = d.lcall, ma = S.mkt_actions_sum, rvGoal = kpi(17) || 4.7;
+  const csrRate = d.lc ? d.lc.booked / d.lc.lead_calls : null;
+  const tiles = [
+    tile({title:'New Google reviews (7 days)', val:rv.w7 ? String(rv.w7.n) : '–', st:'n', label:'FACT', feed:'birdeye_sync', asof:rv.as_of, sub:`${rv.w30 ? rv.w30.n : 0} in 30 days · ${rv.w7 ? rv.w7.feedback : 0} private feedback this week`, src:'Birdeye', spark:(rv.weekly || []).map(w => w.n)}),
+    tile({title:'Average rating (30 days)', val:rv.w30 && rv.w30.avg ? rv.w30.avg + '★' : '–', st:!rv.w30 || !rv.w30.avg ? 'n' : rv.w30.avg >= rvGoal ? 'g' : 'y', label:'FACT', feed:'birdeye_sync', asof:rv.as_of, sub:`Goal ${rvGoal}★ · since ${rv.first_date ? md(rv.first_date) : ''}: ${rv.avg_all}★ on ${rv.rated_total}`, src:'Birdeye'}),
+    tile({title:'Reviews with no reply', val:rv.w30 ? String(rv.w30.unanswered) : '–', st:rv.w30 && rv.w30.unanswered ? 'y' : 'g', label:'FACT', feed:'birdeye_sync', asof:rv.as_of, sub:'Google, last 30 days', src:'Birdeye'}),
+    tile({title:'Call booking %', val:csrRate != null ? pct(csrRate) : '–', st:csrRate == null ? 'n' : csrRate >= (kpi(9) || 40) / 100 ? 'g' : 'y', label:'FACT', feed:'dash_marketing', asof:d.lc && d.lc.as_of, sub:`Goal ${kpi(9) || 40}% · ${d.lc ? mon(d.lc.month) : ''} lead calls`, src:'ST 2409'}),
+    tile({title:'Abandoned calls', val:lc ? pct(lc.abandoned / lc.calls) : '–', st:!lc ? 'n' : lc.abandoned / lc.calls > .15 ? 'r' : 'g', label:'FACT', feed:'dash_marketing', asof:lc && lc.as_of, sub:lc ? `${lc.abandoned} of ${lc.calls} inbound in ${mon(lc.month)}` : '', src:'ST 2246', spark:d.callsDone.slice(-7).map(r => r.abandoned / r.calls * 100)}),
+    tile({title:'SEO desk actions (7 days)', val:String(ma.wk), st:'n', label:'FACT', feed:'marketing_actions', asof:ma.as_of, sub:`${ma.n} logged in total`, src:'SEO desk log'}),
+  ];
+  const mo = (rv.monthly || []);
+  const c1 = barChart({labels:mo.map(m => mon(m.month + '-01')), vals:mo.map(m => m.n), colors:mo.map(m => (m.avg || 0) >= rvGoal ? C.teal : C.amber), fmt:v => String(Math.round(v))});
+  const cl = S.calls.slice(-7);
+  const c2 = barChart({labels:cl.map(r => mon(r.month)), vals:cl.map(r => r.booked), ly:cl.map(r => r.calls), colors:cl.map(r => r.month >= d.cm ? C.gray : C.teal), fmt:v => String(Math.round(v))});
+  const star = n => n ? '★'.repeat(Math.round(n)) : '<span class="mini">feedback</span>';
+  const rr = table([{h:'Date', f:r => md(r.date)}, {h:'Rating', f:r => `<span style="color:${(r.rating || 5) <= 3 ? C.red : C.amber}">${star(r.rating)}</span>`}, {h:'Customer', f:r => esc(r.name)}, {h:'Said', hs:1, f:r => `<span class="mini">${esc(r.text)}</span>`}, {h:'Reply', f:r => r.rating ? (r.responded ? '✓' : `<b style="color:${C.red}">none</b>`) : ''}], rv.recent || []);
+  const cp = table([{h:'Campaign', f:r => esc(r.campaign)}, {h:'Calls', n:1, f:r => r.calls}, {h:'Booked', n:1, f:r => r.booked}, {h:'Revenue', n:1, hs:1, f:r => usd(r.rev)}], S.camp_top);
+  const cs = table([{h:'CSR', f:r => esc(r.csr)}, {h:'Lead calls', n:1, f:r => r.lead_calls}, {h:'Booked', n:1, f:r => r.inbound_booked}, {h:'Rate', n:1, f:r => r.lead_calls ? pct(r.booking_rate) : '–'}], S.csr_month.filter(r => r.calls_taken > 0));
+  const sa = table([{h:'When', f:r => md((r.date_completed || r.date_created).slice(0, 10))}, {h:'What', f:r => `${esc(r.description || r.action_type)}<div class="mini">${esc(r.action_type || '')} · ${esc(r.agent_id || '')}</div>`}, {h:'Status', f:r => esc(r.status || '')}], S.mkt_actions.slice(0, 10));
+  const sl = table([{h:'Metric', f:r => esc(r.metric)}, {h:'Status', f:r => `<span class="pill" style="background:${r.status === 'wired' ? C.green : r.status === 'placeholder' ? C.amber : C.gray}">${esc(r.status)}</span>`}, {h:'Source', hs:1, f:r => `<span class="mini">${esc(r.source)}</span>`}], S.mkt_slots);
+  const cm0 = S.camp_top[0];
+  return `<div class="cols"><div class="left"><div class="grid g3">${tiles.join('')}</div>${mobLook()}
+   <div class="charts two">
+    ${chartBox('Google reviews by month', `Count of star reviews · teal = average at or above ${rvGoal}★ · ${L('FACT')} Birdeye (history starts ${rv.first_date ? md(rv.first_date) : ''})`, c1)}
+    ${chartBox('Calls: booked vs all inbound', `Bar = jobs booked, gray ghost = inbound calls · current month so far · ${L('FACT')} ST 2246`, c2)}
+   </div>
+   ${chartBox('Latest reviews', `First name + last initial · ${L('FACT')} Birdeye · ${esc(ct(rv.as_of))}`, rr)}
+   <div class="charts two">
+    ${chartBox(`Calls by campaign (${cm0 ? mon(S.calls[S.calls.length - 1].month) + ' to ' + md(cm0.pt) : ''})`, `Top campaigns this month · ${L('FACT')} ST 2246`, cp)}
+    ${chartBox('CSR booking (this month)', `Lead calls booked by person · ${L('FACT')} ST 2409`, cs)}
+   </div>
+   <div class="charts two">
+    ${chartBox('SEO desk: latest work', `From the SEO & AEO bots' action log · ${L('FACT')} · ${esc(ct(ma.as_of))}`, sa)}
+    ${chartBox('Marketing data still to connect', 'Ad spend, map-pack and Google Business Profile numbers are not live yet', sl)}
+   </div>
+  </div>${right()}</div>`;
+}
+
+// ---------- Fleet & fuel
+function pageFl() {
+  const d = D(), lf = d.lf, pf = d.pf, f = feed('fleet_fuel');
+  if (!lf) return soon('Fleet & fuel', 'Fuel card spend by truck, cost per gallon, and flagged purchases.', 'The fuel card feed.');
+  const tiles = [
+    tile({title:`Fuel spend (${mon(lf.month)})`, val:usd(lf.fuel_usd), st:pf && lf.fuel_usd > pf.fuel_usd * 1.25 ? 'y' : 'n', label:'FACT', feed:'fleet_fuel', asof:lf.as_of, sub:pf ? `${mon(pf.month)} ${usd(pf.fuel_usd)} · ${lf.fills} fills` : '', src:'Fuel card', spark:d.fm.map(r => r.fuel_usd)}),
+    tile({title:'Average $/gallon', val:'$' + Number(lf.avg_usd_per_gal).toFixed(2), st:'n', label:'FACT', feed:'fleet_fuel', asof:lf.as_of, sub:`${Math.round(lf.gallons).toLocaleString()} gallons in ${mon(lf.month)}`, src:'Fuel card'}),
+    tile({title:'Trucks share', val:lf.truck_usd ? pct(lf.truck_usd / lf.fuel_usd) : '–', st:'n', label:'FACT', feed:'fleet_fuel', asof:lf.as_of, sub:`${usd(lf.truck_usd)} on truck cards · rest on driver cards`, src:'Fuel card'}),
+    tile({title:'Flagged purchases (45 days)', val:String(S.fuel_flags.length), st:S.fuel_flags.length ? 'y' : 'g', label:'FACT', feed:'fleet_fuel', asof:lf.as_of, sub:'Premium grade, non-fuel, out of state', src:'Fuel card rules'}),
+  ];
+  const c1 = barChart({labels:d.fm.map(r => mon(r.month)), vals:d.fm.map(r => r.fuel_usd), colors:d.fm.map(() => C.teal)});
+  const tt = table([{h:'Truck / card', f:r => esc(r.label)}, {h:'Fills', n:1, f:r => r.fills}, {h:'Gallons', n:1, f:r => Math.round(r.gallons)}, {h:'Spend', n:1, f:r => usd(r.usd)}], S.fuel_truck);
+  const fl = table([{h:'When', f:r => md(r.tran_ts_local)}, {h:'Card', f:r => esc(r.label)}, {h:'Where', hs:1, f:r => `<span class="mini">${esc(r.merchant_name)} · ${esc(r.merchant_city)}, ${esc(r.merchant_state)}</span>`}, {h:'$', n:1, f:r => usd(r.amount)}, {h:'Flag', f:r => `<span class="mini">${esc(r.flags.join(', '))}</span>`}], S.fuel_flags, 'No flagged purchases.');
+  return `<div class="cols"><div class="left"><div class="grid">${tiles.join('')}</div>${mobLook()}
+   <div class="charts two">
+    ${chartBox('Fuel spend by month', `Complete months · ${L('FACT')} fuel card · data through ${esc(md(lf.through_date || lf.month))}`, c1)}
+    ${chartBox(`Spend by truck / card (${mon(lf.month)})`, `${L('FACT')} fuel card`, tt)}
+   </div>
+   ${chartBox('Purchases to check', `Last 45 days · ${L('FACT')} · weekend/after-hours alone are not shown`, fl)}
+   <div class="cs">Fuel card files arrive in batches, so the newest month can lag (feed ${esc(f.status)}, loaded ${esc(ct(f.last_loaded_at))}). Miles-per-gallon and truck GPS views come next.</div>
+  </div>${right()}</div>`;
+}
+
+// ---------- tabs with no data feed yet
+const pageWar = () => `<div class="cols"><div class="left">${soon('Warranty', 'Open warranty claims, parts credits owed by vendors, and warranty labor by month.', 'A warranty claims source. The Warranty bot is not writing data yet; once it writes its claims table, this tab turns on.')}</div>${right()}</div>`;
+const pagePay = () => `<div class="cols"><div class="left">${soon('Payroll & commission', 'Labor cost as a percent of revenue, commission owed by technician, and overtime hours.', 'Read access to ServiceTitan payroll exports or the payroll provider, plus the new commission plan rules. The Payroll bot feed is not live yet.')}</div>${right()}</div>`;
+const pageLook = () => `<div class="cols"><div class="left">${soon('🔍 Look up', 'Type a customer, invoice, job or estimate number and see balance, open estimates, last visit and reviews on one card.', 'A search endpoint on the read-only database role. Planned for the production build.')}</div>${right()}</div>`;
+
+const PAGES = {ov:pageOv, ar:pageAR, un:pageUnsent, est:pageEst, act:pageAct, war:pageWar, fl:pageFl, mk:pageMk, pay:pagePay, look:pageLook};
+function banner() {
+  const bad = S.bots.filter(b => b.status !== 'OK' && b.status !== 'NOT LIVE');
+  const el = document.getElementById('banner');
+  if (bad.length) el.innerHTML = `<div class="banner warn">⚠ Late data: ${bad.map(b => esc(b.bot) + ' (' + esc(b.detail || b.status) + ')').join('; ')}. Gray tiles are not current.</div>`;
+  else el.innerHTML = `<div class="banner ok">✅ All live feeds current · TTM revenue ties to ServiceTitan ($${Number(S.recon.diff).toFixed(2)} diff) · AR ties to ST 385 ($${Number(S.ar_recon.diff).toFixed(2)} diff)</div>`;
+}
+function renderPage(k) { const el = document.getElementById('p-' + k); try { el.innerHTML = PAGES[k](); } catch (e) { el.innerHTML = `<div class="err">This tab could not be drawn (${esc(e.message)}). Other tabs still work.</div>`; console.error(k, e); } }
+function renderLooks() { render(); }
+function render() {
+  for (const k of Object.keys(PAGES)) renderPage(k);
+  banner();
+  const g = new Date(S.generated_at);
+  document.getElementById('upd').innerHTML = `Updated ${esc(ct(S.generated_at))} CT<br>${g.toLocaleDateString('en-US', {timeZone:TZ, weekday:'short', month:'short', day:'numeric'})}`;
+  document.getElementById('gen').textContent = `Snapshot ${g.toLocaleString('en-US', {timeZone:TZ})} CT.`;
+  const live = document.getElementById('live'), old = Date.now() - g > 15 * 60e3;
+  live.textContent = old ? 'NOT UPDATING' : 'LIVE'; live.classList.toggle('stale', old);
+}
+
+// ---------- data layer: box (passcode cookie + /api/*) or hosted (Supabase Auth + RPC)
+const CFG = window.DASH_CFG || null;
+// Minimal Supabase Auth + RPC client (no library): password sign-in, token refresh, RPC calls.
+const AUTH_KEY = 'ahpe-dash-auth';
+const SB = {
+  sess() { try { return JSON.parse(localStorage.getItem(AUTH_KEY)); } catch (e) { return null; } },
+  save(d) { const s = {access_token:d.access_token, refresh_token:d.refresh_token, expires_at:d.expires_at || (Math.floor(Date.now() / 1000) + (d.expires_in || 3600)), email:(d.user && d.user.email) || (SB.sess() || {}).email}; localStorage.setItem(AUTH_KEY, JSON.stringify(s)); return s; },
+  clear() { localStorage.removeItem(AUTH_KEY); },
+  async call(path, opt) {
+    const r = await fetch(CFG.url + path, Object.assign({cache:'no-store'}, opt, {headers:Object.assign({apikey:CFG.key, 'Content-Type':'application/json'}, (opt || {}).headers || {})}));
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { const e = new Error(j.msg || j.message || j.error_description || j.error || ('HTTP ' + r.status)); e.status = r.status; e.code = j.code || j.error_code; throw e; }
+    return j;
+  },
+  async signIn(email, password) { return SB.save(await SB.call('/auth/v1/token?grant_type=password', {method:'POST', body:JSON.stringify({email, password})})); },
+  async token() {
+    let s = SB.sess(); if (!s || !s.refresh_token) return null;
+    if (s.expires_at - 90 < Date.now() / 1000) {
+      try { s = SB.save(await SB.call('/auth/v1/token?grant_type=refresh_token', {method:'POST', body:JSON.stringify({refresh_token:s.refresh_token})})); }
+      catch (e) { if (e.status && e.status < 500) { SB.clear(); return null; } throw e; }
+    }
+    return s.access_token;
+  },
+  async rpc(fn, args) {
+    const t = await SB.token(); if (!t) { const e = new Error('signed out'); e.code = 'signedout'; throw e; }
+    return SB.call('/rest/v1/rpc/' + fn, {method:'POST', headers:{Authorization:'Bearer ' + t}, body:JSON.stringify(args || {})});
+  },
+  async setPassword(password) { const t = await SB.token(); return SB.call('/auth/v1/user', {method:'PUT', headers:{Authorization:'Bearer ' + t}, body:JSON.stringify({password})}); },
+  async signOut() { const t = (SB.sess() || {}).access_token; SB.clear(); if (t) { try { await SB.call('/auth/v1/logout', {method:'POST', headers:{Authorization:'Bearer ' + t}}); } catch (e) {} } },
+};
+async function jfetch(url, opt) {
+  const r = await fetch(url, Object.assign({cache:'no-store', credentials:'same-origin'}, opt || {}));
+  if (r.status === 401) { location.href = 'login'; throw new Error('signed out'); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+  return j;
+}
+async function rpc(fn, args) {
+  try { return await SB.rpc(fn, args); }
+  catch (e) { if (e.code === 'signedout' || e.code === '42501' || e.status === 401) { await SB.signOut(); S = null; showLogin('Please sign in.'); } throw e; }
+}
+const API = {
+  async snapshot() {
+    if (CFG) return rpc('dash_snapshot');
+    const s = await jfetch('api/snapshot');
+    try { s.priorities = await jfetch('api/priorities'); } catch (e) { s.priorities = null; console.error(e); }
+    return s;
+  },
+  async prio(action, b) {
+    if (CFG) return rpc('dash_priorities', {p_action:action, p_id:b.id ? Number(b.id) : null, p_title:b.title || null, p_next:b.next || null, p_owner:b.owner || null, p_needs_ok:!!b.needs_ok});
+    return jfetch('api/priorities', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(Object.assign({action}, b))});
+  },
+};
+function showLogin(msg) {
+  document.body.classList.add('signedout');
+  document.getElementById('login').innerHTML = `<form id="lf" class="lform"><h2>Sign in</h2>
+   <label for="le">Email</label><input id="le" name="email" type="email" autocomplete="username" inputmode="email" required>
+   <label for="lp">Password</label><input id="lp" name="password" type="password" autocomplete="current-password" required>
+   <button type="submit">Sign in</button><div class="lmsg" id="lmsg">${esc(msg || '')}</div>
+   <div class="note">Only approved Advantage HPE accounts can sign in. You stay signed in on this device. Forgot the password? Ask Ranger to reset it.</div></form>`;
+  document.getElementById('lf').addEventListener('submit', async e => {
+    e.preventDefault(); const f = new FormData(e.target), m = document.getElementById('lmsg'); m.textContent = 'Signing in…';
+    try { await SB.signIn(String(f.get('email')).trim().toLowerCase(), f.get('password')); }
+    catch (err) { m.textContent = /invalid/i.test(err.message) ? 'That email or password did not work.' : err.message; return; }
+    document.body.classList.remove('signedout'); document.getElementById('login').innerHTML = ''; load();
+  });
+}
+async function load() {
+  try {
+    S = await API.snapshot(); render();
+  } catch (e) {
+    const live = document.getElementById('live'); live.textContent = 'OFFLINE'; live.classList.add('stale');
+    if (!S && !document.body.classList.contains('signedout')) document.querySelector('main').innerHTML = `<div class="err">Could not load data (${esc(e.message)}). It will retry in 5 minutes.</div>`;
+  }
+}
+async function start() {
+  if (CFG) {
+    document.getElementById('acct').innerHTML = ' · <a href="#" id="pwchg">Change password</a> · <a href="#" id="sout">Sign out</a>';
+    document.getElementById('sout').onclick = async e => { e.preventDefault(); await SB.signOut(); S = null; showLogin('Signed out.'); };
+    document.getElementById('pwchg').onclick = async e => { e.preventDefault(); const p = prompt('New password (at least 10 characters):'); if (!p) return; if (p.length < 10) return alert('Too short.'); try { await SB.setPassword(p); alert('Password changed.'); } catch (err) { alert('Not changed: ' + err.message); } };
+    if (!SB.sess()) return showLogin();
+  } else {
+    document.getElementById('acct').innerHTML = ' · <a href="logout">Sign out</a>';
+  }
+  load();
+}
+function go(p) {
+  if (!PAGES[p]) p = 'ov';
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x.dataset.p === p));
+  document.querySelectorAll('.page').forEach(x => x.classList.toggle('on', x.id === 'p-' + p));
+  history.replaceState(null, '', '#' + p); window.scrollTo(0, 0);
+  const b = document.querySelector(`.tab[data-p="${p}"]`); if (b) b.scrollIntoView({inline:'center', block:'nearest'});
+}
+document.getElementById('tabs').addEventListener('click', e => { const b = e.target.closest('button.tab'); if (b) go(b.dataset.p); });
+document.querySelector('main').addEventListener('click', e => { const a = e.target.closest('[data-go]'); if (a) { e.preventDefault(); go(a.dataset.go); } });
+go(location.hash.slice(1) || 'ov');
+start(); setInterval(() => { if (S) load(); }, 5 * 60e3);
+document.addEventListener('visibilitychange', () => { if (!document.hidden && S && Date.now() - new Date(S.generated_at) > 5 * 60e3) load(); });

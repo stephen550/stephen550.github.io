@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src https://pmasdhjsltqjooobrgsd.supabase.co; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; base-uri 'none'; form-action 'self'">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#003B49">
+<meta name="robots" content="noindex,nofollow">
+<title>Advantage HPE · Company Dashboard</title>
+<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="apple-touch-icon.png"><link rel="icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="AHPE Dash"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>
+:root{--navy:#003B49;--teal:#007D8A;--red:#BE3A34;--green:#1f8a4c;--amber:#d98a00;--mut:#5b6b70;--bg:#f4f7f8;--gray:#8a979b}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{overflow-x:hidden}
+body{font-family:Inter,"Noto Sans",-apple-system,"Segoe UI",Roboto,sans-serif;color:#13262c;background:var(--bg);-webkit-text-size-adjust:100%}
+header{background:var(--navy);border-bottom:6px solid var(--red);padding:12px 14px calc(12px);padding-top:max(12px,env(safe-area-inset-top));display:flex;align-items:center;gap:12px}
+.logo{background:#fff;border-radius:10px;padding:3px 6px;flex:none}.logo img{height:40px;display:block}
+.htxt{min-width:0}
+h1{color:#fff;font-size:19px;font-weight:800;letter-spacing:-.2px;line-height:1.15}
+header p{color:#cfe3e7;font-size:12.5px;margin-top:2px;line-height:1.25}
+.hright{margin-left:auto;text-align:right;color:#fff;font-size:12px;line-height:1.3;flex:none}
+.live{display:inline-block;background:#e8f6ee;color:var(--green);font-weight:900;font-size:11px;letter-spacing:.8px;padding:3px 8px;border-radius:999px;margin-bottom:3px}
+.live.stale{background:#FECB8B;color:#7a4b00}
+.tabs{display:flex;gap:6px;padding:8px 10px 0;background:#e2ebed;border-bottom:3px solid var(--navy);overflow-x:auto;scrollbar-width:none;position:sticky;top:0;z-index:5}
+.tabs::-webkit-scrollbar{display:none}
+.tab{font-size:14.5px;font-weight:700;color:var(--navy);padding:10px 13px;border-radius:10px 10px 0 0;background:#f8fbfb;white-space:nowrap;border:0;cursor:pointer;font-family:inherit}
+.tab.on{background:var(--navy);color:#fff}
+.tab.off{color:#9aa9ad;cursor:default}
+.tab.off small{font-weight:600;font-size:11px}
+.banner{margin:12px 12px 0;border-radius:12px;padding:10px 14px;font-size:14px;font-weight:700;display:flex;gap:10px;align-items:center}
+.banner.ok{background:#e8f6ee;color:#145c33;border:2px solid #b9e2c9}
+.banner.warn{background:#fff3df;color:#7a4b00;border:2px solid #f3c27a}
+main{padding:12px;display:flex;flex-direction:column;gap:14px;max-width:1920px;margin:0 auto}
+.page{display:none;flex-direction:column;gap:14px}.page.on{display:flex}
+.cols{display:flex;flex-direction:column;gap:14px}
+.left,.right{display:flex;flex-direction:column;gap:14px;min-width:0}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.tile{background:#fff;border-radius:14px;box-shadow:0 2px 6px rgba(0,40,50,.12);padding:10px 12px 9px;display:flex;flex-direction:column;min-height:150px;border-top:7px solid var(--gray)}
+.tile.hero{grid-column:1/-1;min-height:0}
+.trow{display:flex;justify-content:space-between;align-items:flex-start;gap:6px}
+.ttitle{font-size:13.5px;font-weight:700;color:var(--mut);line-height:1.2}
+.st{color:#fff;font-size:10.5px;font-weight:800;letter-spacing:.5px;padding:3px 7px;border-radius:999px;white-space:nowrap;flex:none}
+.vrow{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:4px 6px;margin-top:6px}
+.vrow .spark{margin-left:auto}
+.val{font-size:30px;font-weight:800;letter-spacing:-.8px;line-height:1;color:var(--navy);white-space:nowrap}
+.hero .val{font-size:44px}
+.spark{flex:none}
+.sub{font-size:13px;color:#13262c;margin-top:8px;line-height:1.3}
+.own{font-size:11.5px;color:var(--teal);font-weight:700;margin-top:auto;padding-top:7px;line-height:1.3}
+.lab{display:inline-block;font-size:10px;font-weight:900;letter-spacing:.6px;padding:1px 6px;border-radius:5px;margin-right:4px;vertical-align:1px}
+.lab.FACT{background:#e3f1f3;color:var(--teal)}.lab.ESTIMATE{background:#fff1d6;color:#8a5a00;border:1px dashed #c48a1c}
+.tile.stale{filter:grayscale(.85);opacity:.75}
+.chart{background:#fff;border-radius:14px;box-shadow:0 2px 6px rgba(0,40,50,.12);padding:12px 12px 8px;min-width:0}
+.chart h3{font-size:16.5px;color:var(--navy);font-weight:800}
+.chart .cs{font-size:12.5px;color:var(--mut);margin:2px 0 6px;line-height:1.3}
+.chart svg{width:100%;height:auto;display:block}
+.charts{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
+.lookbox{background:#fff;border-radius:14px;border:3px solid var(--red);box-shadow:0 2px 6px rgba(0,40,50,.12);padding:12px;display:flex;flex-direction:column;gap:8px}
+.lookhead{display:flex;align-items:center;gap:10px}
+.eye{width:36px;height:36px;border-radius:50%;background:var(--red);color:#fff;font-size:21px;font-weight:900;display:flex;align-items:center;justify-content:center;flex:none}
+.lookhead h2{font-size:20px;color:var(--red);font-weight:900;line-height:1.1}.lookhead span{font-size:12.5px;color:var(--mut);display:block}
+.look{display:flex;gap:10px;align-items:flex-start;background:#f7fafa;border-radius:10px;padding:8px 10px;border-left:7px solid var(--gray)}
+.lic{width:26px;height:26px;border-radius:50%;color:#fff;font-weight:900;font-size:16px;display:flex;align-items:center;justify-content:center;flex:none;margin-top:1px}
+.ltxt b{display:block;font-size:15px;color:var(--navy);line-height:1.2}.ltxt span{display:block;font-size:13px;color:#2b3c41;line-height:1.3;margin-top:2px}
+.ltxt i{display:block;font-size:11.5px;color:var(--teal);font-style:normal;font-weight:700;margin-top:2px}
+.feeds{background:#fff;border-radius:14px;box-shadow:0 2px 6px rgba(0,40,50,.12);padding:12px}
+.feeds h3{font-size:16px;color:var(--navy);font-weight:800;margin-bottom:8px}
+.fgrid{display:grid;grid-template-columns:1fr;gap:6px}
+.feed{display:flex;align-items:center;gap:8px;font-size:13px}.feed b{color:var(--navy);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.feed .ft{margin-left:auto;color:var(--mut);white-space:nowrap}
+.dot{width:11px;height:11px;border-radius:50%;flex:none}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;color:var(--mut);font-weight:700;font-size:11.5px;border-bottom:2px solid #e3eaec;padding:5px 4px}
+td{padding:6px 4px;border-bottom:1px solid #eef3f4;vertical-align:top}
+td.n,th.n{text-align:right;white-space:nowrap}
+.pill{font-size:11px;font-weight:800;padding:2px 7px;border-radius:999px;color:#fff;white-space:nowrap}
+footer{padding:14px 16px calc(18px + env(safe-area-inset-bottom));font-size:12px;color:var(--mut);background:#eaf0f1;line-height:1.5}
+.tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.mob{display:block}.desk{display:none}
+@media (max-width:699px){
+  h1{font-size:16.5px}header p{font-size:11.5px}.logo img{height:34px}.hright{font-size:11px}
+  .tile .spark{width:64px;height:30px}.val{font-size:26px}.hero .val{font-size:40px}.hero .spark{width:120px;height:44px}
+  .ttitle{font-size:12.5px}.st{font-size:9.5px;padding:2px 6px}.sub{font-size:12.5px}
+  .hs{display:none}table{font-size:12.5px}
+  .grid.g3 .tile:last-child:nth-child(even){grid-column:1/-1}
+}
+a.look{text-decoration:none;color:inherit;cursor:pointer}a.look:hover{background:#eef5f6}
+.mini{font-size:11.5px;color:var(--mut);line-height:1.3}
+.warnt{color:var(--red);font-size:11px;font-weight:700}
+.sect{display:flex;flex-direction:column;gap:2px;border-top:3px solid var(--navy);padding-top:10px;margin-top:4px}
+.sect h2{font-size:21px;color:var(--navy);font-weight:900}.sect span{font-size:13px;color:var(--mut)}
+.soon{background:#fff;border-radius:14px;box-shadow:0 2px 6px rgba(0,40,50,.12);padding:22px;border-top:7px solid var(--gray);max-width:760px}
+.soon h2{font-size:24px;color:var(--navy);margin:6px 0 8px}.soon p{font-size:15px;line-height:1.45;margin-top:6px}
+.soonh{display:inline-block;background:#e2ebed;color:var(--navy);font-weight:900;font-size:11.5px;letter-spacing:.8px;padding:3px 9px;border-radius:999px;text-transform:uppercase}
+h4.grp{font-size:15px;color:var(--navy);margin:12px 0 4px;border-bottom:2px solid #e3eaec;padding-bottom:4px}h4.grp span{font-weight:600;color:var(--mut);font-size:12.5px}
+.act{display:flex;gap:10px;justify-content:space-between;padding:7px 2px;border-bottom:1px solid #eef3f4;font-size:13.5px}.act b{font-weight:650;color:#13262c}.actd{flex:none}
+.badge{display:inline-block;font-size:10.5px;font-weight:900;letter-spacing:.5px;padding:2px 7px;border-radius:999px;color:#fff;vertical-align:2px;margin-left:4px;white-space:nowrap}
+.badge.red{background:var(--red)}.badge.gray{background:var(--gray)}.badge.amber{background:var(--amber)}
+.pcard{display:flex;gap:12px;background:#fff;border:2px solid #e3eaec;border-left:7px solid var(--teal);border-radius:12px;padding:10px 12px;margin-top:9px}
+.pcard.held{border-left-color:var(--gray);background:#f7f9f9}.pcard.compact{padding:7px 10px;border-left-color:#c9d6d9}
+.prank{font-size:22px;font-weight:900;color:var(--navy);min-width:26px;text-align:center;line-height:1.1}
+.pbody{flex:1;min-width:0}.ptitle{font-size:16px;font-weight:800;color:#13262c;line-height:1.3}.compact .ptitle{font-size:14px;font-weight:700}
+.pnext{font-size:13.5px;margin-top:4px;line-height:1.35}.pmeta{font-size:12px;color:var(--mut);margin-top:4px}.pmeta b{color:var(--teal)}
+.pctl{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.pb{font-family:inherit;font-size:14px;font-weight:800;border:2px solid #c9d6d9;background:#fff;color:var(--navy);border-radius:10px;padding:8px 12px;min-height:40px;min-width:44px;cursor:pointer}
+.pb:disabled{opacity:.35;cursor:default}.pb-done{border-color:#b9e2c9;color:var(--green)}.pb-drop{color:var(--red);border-color:#efc4c1}
+.pb-add,.pb-save{background:var(--navy);color:#fff;border-color:var(--navy);margin-top:12px}
+.compact .pb{min-height:34px;padding:5px 10px;font-size:13px}
+.padd{display:flex;flex-direction:column;gap:8px;margin-top:12px;background:#f4f7f8;border-radius:12px;padding:12px}
+.padd input[name=title],.padd input[name=next],.padd select{font-size:16px;padding:10px;border:2px solid #c9d6d9;border-radius:10px;font-family:inherit;width:100%}
+.paddrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.paddrow select{width:auto;flex:1}.paddrow label{font-size:14px;font-weight:700}
+.pmsg{display:none;font-weight:800;font-size:13px;margin-top:6px}.pmsg.on{display:block;color:var(--mut)}.pmsg.ok{color:var(--green)}.pmsg.bad{color:var(--red)}
+details.fold{background:#fff;border-radius:14px;box-shadow:0 2px 6px rgba(0,40,50,.12);padding:12px}
+details.fold summary{font-size:16.5px;font-weight:800;color:var(--navy);cursor:pointer;min-height:30px}
+#login:empty{display:none}.signedout .tabs,.signedout main,.signedout #banner{display:none}
+.lform{max-width:400px;margin:30px auto;background:#fff;border-radius:14px;box-shadow:0 2px 6px rgba(0,40,50,.12);padding:22px;border-top:7px solid var(--teal);display:flex;flex-direction:column;gap:8px}
+.lform h2{color:var(--navy)}.lform label{font-weight:800;color:var(--navy)}.lform input{font-size:18px;padding:12px;border:2px solid #c9d6d9;border-radius:10px;width:100%}
+.lform button{margin-top:8px;font-size:17px;font-weight:800;padding:13px;border:0;border-radius:10px;background:var(--navy);color:#fff}
+.lmsg{color:var(--red);font-weight:700;min-height:18px}.lform .note{color:var(--mut);font-size:13px}
+footer a{color:var(--teal);font-weight:700}
+.err{background:#fff;border:3px solid var(--red);border-radius:14px;padding:16px;margin:12px;font-weight:700;color:var(--red)}
+@media (min-width:700px){
+  .grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .tile.hero{grid-column:span 2}
+  .charts{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .fgrid{grid-template-columns:1fr 1fr}
+  h1{font-size:26px}header p{font-size:15px}.logo img{height:58px}
+}
+@media (min-width:1200px){
+  .mob{display:none}.desk{display:block}
+  header{padding:12px 30px}
+  main{padding:16px 30px}
+  .cols{flex-direction:row;align-items:flex-start}
+  .left{flex:1}.right{width:440px;flex:none}
+  .grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+  .tile{min-height:180px;padding:12px 15px 10px}.val{font-size:40px}.hero .val{font-size:48px}
+  .ttitle{font-size:16px}.sub{font-size:14.5px}
+  .charts{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .charts.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .right .fgrid{grid-template-columns:1fr}
+  .grid.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .tab{font-size:16px;padding:11px 16px}
+  .tabs{padding:8px 30px 0}
+  .banner{margin:14px 30px 0}
+}
+</style></head>
+<body>
+<header>
+  <div class="logo"><img src="logo.png" alt="Advantage HPE"></div>
+  <div class="htxt"><h1>Advantage HPE · Company Dashboard</h1><p>Green = on track · yellow = watch · red = act today.</p></div>
+  <div class="hright"><span class="live" id="live">LIVE</span><br><span id="upd">loading…</span></div>
+</header>
+<nav class="tabs" id="tabs">
+  <button class="tab on" data-p="ov">Overview</button>
+  <button class="tab" data-p="ar">Collections / AR</button>
+  <button class="tab" data-p="un">Unsent invoices</button>
+  <button class="tab" data-p="est">Estimates &amp; sales</button>
+  <button class="tab" data-p="act">Action tracker</button>
+  <button class="tab" data-p="war">Warranty</button>
+  <button class="tab" data-p="fl">Fleet &amp; fuel</button>
+  <button class="tab" data-p="mk">Marketing &amp; reviews</button>
+  <button class="tab" data-p="pay">Payroll &amp; commission</button>
+  <button class="tab" data-p="look">🔍 Look up</button>
+</nav>
+<div id="login"></div>
+<div id="banner"></div>
+<main>
+  <section class="page on" id="p-ov"></section>
+  <section class="page" id="p-ar"></section>
+  <section class="page" id="p-un"></section>
+  <section class="page" id="p-est"></section>
+  <section class="page" id="p-act"></section>
+  <section class="page" id="p-war"></section>
+  <section class="page" id="p-fl"></section>
+  <section class="page" id="p-mk"></section>
+  <section class="page" id="p-pay"></section>
+  <section class="page" id="p-look"></section>
+</main>
+<footer>Internal · read-only · times are Central (CT) · <span class="lab FACT">FACT</span> = straight from the source system (ServiceTitan, QBO closed months, bank, Birdeye, fuel card, bot logs) · <span class="lab ESTIMATE">ESTIMATE</span> = calculated or forecast; see the note on each tile. Refreshes every 5 minutes. <span id="gen"></span><span id="acct"></span></footer>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body></html>

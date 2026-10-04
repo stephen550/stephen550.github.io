@@ -1,0 +1,1 @@
+window.DASH_CFG = {url: 'https://pmasdhjsltqjooobrgsd.supabase.co', key: 'sb_publishable_n4se7aCVz3ymlDBeP7aDLg_ad4LX_A4'}; // publishable key (safe to ship); data needs a signed-in, allow-listed user
