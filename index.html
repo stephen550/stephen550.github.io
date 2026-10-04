@@ -142,41 +142,46 @@ footer a{color:var(--teal);font-weight:700}
   .tab{font-size:16px;padding:11px 16px}
   .tabs{padding:8px 30px 0}
   .banner{margin:14px 30px 0}
+  .cflegend{margin:6px 32px 0}
 }
+.own .cf{float:right;display:inline-flex;align-items:center;gap:4px;border:1px solid #d5dfe2;background:#fff;border-radius:999px;padding:1px 7px 1px 5px;font:800 11px/1.5 inherit;color:#33464c;cursor:pointer;margin-left:6px}
+.cf i,.cflegend i{display:inline-block;width:9px;height:9px;border-radius:50%}
+.cfr{font-size:12px;color:#33464c;background:#f3f7f8;border-radius:8px;padding:6px 8px;margin-top:6px;line-height:1.35}
+.cflegend{font-size:12px;color:#33464c;margin:6px 14px 0;line-height:1.6}.cflegend span{display:inline-flex;align-items:center;gap:5px;margin:0 10px 0 6px}.cflegend em{color:#5b6b70}
 </style></head>
 <body>
 <header>
   <div class="logo"><img src="logo.png" alt="Advantage HPE"></div>
-  <div class="htxt"><h1>Advantage HPE · Company Dashboard</h1><p>Green = on track · yellow = watch · red = act today.</p></div>
+  <div class="htxt"><h1>Advantage HPE · Company Dashboard</h1><p>Status: green = on track · yellow = watch · red = act today. The % chip = data confidence.</p></div>
   <div class="hright"><span class="live" id="live">LIVE</span><br><span id="upd">loading…</span></div>
 </header>
 <nav class="tabs" id="tabs">
   <button class="tab on" data-p="ov">Overview</button>
+  <button class="tab" data-p="est">Estimates &amp; sales</button>
+  <button class="tab" data-p="mk">Marketing &amp; reviews</button>
   <button class="tab" data-p="ar">Collections / AR</button>
   <button class="tab" data-p="un">Unsent invoices</button>
-  <button class="tab" data-p="est">Estimates &amp; sales</button>
-  <button class="tab" data-p="act">Action tracker</button>
-  <button class="tab" data-p="war">Warranty</button>
-  <button class="tab" data-p="fl">Fleet &amp; fuel</button>
-  <button class="tab" data-p="mk">Marketing &amp; reviews</button>
+  <button class="tab" data-p="act">My priorities</button>
   <button class="tab" data-p="pay">Payroll &amp; commission</button>
+  <button class="tab" data-p="fl">Fleet &amp; fuel</button>
+  <button class="tab" data-p="war">Warranty</button>
   <button class="tab" data-p="look">🔍 Look up</button>
 </nav>
 <div id="login"></div>
 <div id="banner"></div>
 <main>
   <section class="page on" id="p-ov"></section>
+  <section class="page" id="p-est"></section>
+  <section class="page" id="p-mk"></section>
   <section class="page" id="p-ar"></section>
   <section class="page" id="p-un"></section>
-  <section class="page" id="p-est"></section>
   <section class="page" id="p-act"></section>
-  <section class="page" id="p-war"></section>
-  <section class="page" id="p-fl"></section>
-  <section class="page" id="p-mk"></section>
   <section class="page" id="p-pay"></section>
+  <section class="page" id="p-fl"></section>
+  <section class="page" id="p-war"></section>
   <section class="page" id="p-look"></section>
 </main>
-<footer>Internal · read-only · times are Central (CT) · <span class="lab FACT">FACT</span> = straight from the source system (ServiceTitan, QBO closed months, bank, Birdeye, fuel card, bot logs) · <span class="lab ESTIMATE">ESTIMATE</span> = calculated or forecast; see the note on each tile. Refreshes every 5 minutes. <span id="gen"></span><span id="acct"></span></footer>
+<footer>Internal · business data is read-only (only the priorities list can be edited) · times are Central (CT) · <span class="lab FACT">FACT</span> = straight from the source system (ServiceTitan, QBO closed months, bank, Birdeye, fuel card, bot logs) · <span class="lab ESTIMATE">ESTIMATE</span> = calculated or forecast; see the note on each tile. Refreshes every 5 minutes. <span id="gen"></span><span id="acct"></span></footer>
 <script src="config.js"></script>
 <script src="app.js"></script>
 </body></html>
