@@ -76,13 +76,9 @@ function actNow(t) {
       due:r.due_on ? (dueTxt(dd) || wdate(r.due_on)) : 'no date', src:'My priorities', cf:[100, 'Live from your priorities list (the list is the source of record).']}, dd ?? 3); });
   if (rv.w7 && rv.w7.low) add({st:'r', go:'mk', lab:'FACT', feed:'birdeye_sync', h:`Call ${rv.w7.low} customer${rv.w7.low > 1 ? 's' : ''} who left 3★ or less`, amt:null, cons:'Then reply on Google. Unanswered low reviews cost new calls.', owner:'You / office', due:'today', src:'Birdeye', cf:[98, 'Birdeye copy of Google reviews (synced hourly).']}, 0);
   out.sort((a, b) => b.score - a.score);
-  // Stephen ranking 10/5: bank/bills are reminders only (not fighting money-today / marketing / builds for top slots).
-  const isRemind = r => r.lab === 'REMINDER' || /deposit verification|fcci|pinnacle card|bank:\s|monday deposit/i.test(r.h || '');
-  const main = out.filter(r => !isRemind(r)), rem = out.filter(isRemind);
-  const vis = main.slice(0, 5), more = main.slice(5);
-  return `<div class="tsec">${tsh('🔴 Act now', 'Money today + marketing/builds first · bank/bills under Reminders.')}${vis.map(trow).join('') || '<div class="cs tnone">✅ Nothing urgent.</div>'}
-   ${more.length ? `<details class="fold tmore"><summary>+${more.length} lower</summary>${more.map(trow).join('')}</details>` : ''}
-   ${rem.length ? `<details class="fold tmore"><summary>Reminders · bank &amp; bills (${rem.length})</summary>${rem.map(trow).join('')}</details>` : ''}</div>`;
+  const vis = out.slice(0, 5), more = out.slice(5);
+  return `<div class="tsec">${tsh('🔴 Act now', 'Ranked by $ at stake × how soon it is due.')}${vis.map(trow).join('') || '<div class="cs tnone">✅ Nothing urgent.</div>'}
+   ${more.length ? `<details class="fold tmore"><summary>+${more.length} lower</summary>${more.map(trow).join('')}</details>` : ''}</div>`;
 }
 
 // 2) PACE STRIP: last workday + month to date vs target
